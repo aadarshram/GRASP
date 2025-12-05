@@ -4,11 +4,9 @@ Builder to load a pretrained Llava-Pythia model with optional quantization and d
 
 import os
 import warnings
-import shutil
-
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig, CLIPImageProcessor, SiglipImageProcessor, \
-    GPTNeoXModel, GPTNeoXPreTrainedModel
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig, CLIPImageProcessor, SiglipImageProcessor
 import torch
+
 from llava_pythia.model import *
 from llava_pythia.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
@@ -50,8 +48,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         # Load LLaVA-Phi model
         if 'lora' in model_name.lower() and model_base is None:
             warnings.warn('There is `lora` in model name but no `model_base` is provided. If you are loading a LoRA model, please provide the `model_base` argument.')
+
         if 'lora' in model_name.lower() and model_base is not None:
-            
             path = model_path.split('/')[0:-1]
             root_path = '/'.join(path)
             lora_cfg_pretrained = AutoConfig.from_pretrained(root_path)
@@ -82,7 +80,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if any(k.startswith('model.gpt_neox.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
             
-            # 删除lora相关的参数
             keys_to_del = []
             for k,v in non_lora_trainables.items():
                 if 'lora' in k:
@@ -98,6 +95,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print('Merging LoRA weights...')
             model = model.merge_and_unload()
             print('Model is loaded...')
+
         elif model_base is not None:
             # this may be mm projector only
             print('Loading LLaVA-Pythia from base model...')
@@ -133,13 +131,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         else:
             tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
             model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+
     if "clip" in config.vision_config["vision_tower"]["vision_model_name_or_path"]:
         image_processor = CLIPImageProcessor.from_pretrained(model_path)
     elif "siglip" in config.vision_config["vision_tower"]["vision_model_name_or_path"]:
         image_processor = SiglipImageProcessor.from_pretrained(model_path)
     else:
         return NotImplementedError
-    # image_processor = CLIPImageProcessor.from_pretrained(model_path)
 
     if 'pythia' in model_name.lower():
         mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)

@@ -4,7 +4,7 @@ TODO: I see some functions repeated. Check and clean up. (Ad)
 '''
 import torch
 
-from llava_pythia import conversation as conversation_lib
+from llava_pythia import conversations as conversation_lib
 from llava_pythia.model.language_model.pythia.llava_pythia import LlavaPythiaForCausalLM
 
 import transformers
@@ -97,7 +97,7 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
             GPTNeoXModel, GPTNeoXPreTrainedModel
         kwargs = {"device_map": "cuda"}
         rank0_print("@@@@@@@Loading pretrain weights...@@@@@@@@@@")
-        assert config['model_args'].model_pretrain is not "", "load pretrain weights need set the model_pretrain in DataArguments!!!!"
+        assert config['model_args'].model_pretrain != "", "load pretrain weights need set the model_pretrain in DataArguments!!!!"
         # model = load_pretrained_model(config['model_args'].model_pretrain, config['model_args'].model_name_or_path, model_name, False, False)
         model_path = config['model_args'].model_pretrain
         model_base = config['model_args'].model_name_or_path

@@ -126,7 +126,6 @@ class LlavaPythiaVisionConfig(PretrainedConfig):
                 f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
                 f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
             )
-
         return cls.from_dict(config_dict, **kwargs)
 
 
@@ -160,12 +159,7 @@ class ProjectorConfig(PretrainedConfig):
                 f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
                 f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
             )
-
         return cls.from_dict(config_dict, **kwargs)
-
-
-
-from typing import List
 
 # for initialize act head 
 
@@ -173,8 +167,6 @@ DEFAULT_VISUAL_CONFIG = {
     "vision_tower": LlavaPythiaVisionConfig().to_dict(),
     "mm_projector": ProjectorConfig().to_dict(),
 }
-
-# print(DEFAULT_ACT_CONFIG['act'])
 
 class LlavaPythiaConfig(GPTNeoXConfig):
     model_type = "llava_pythia"

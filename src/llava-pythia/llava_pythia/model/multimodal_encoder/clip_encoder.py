@@ -2,13 +2,11 @@
 CLIP Vision Encoder for Llava Pythia Model.
 '''
 
-from abc import ABC
-
 import torch
 import torch.nn as nn
-
 from transformers import CLIPPreTrainedModel, CLIPVisionConfig
 from transformers.models.clip.modeling_clip import CLIPVisionTransformer
+
 from llava_pythia.model.language_model.pythia.configuration_llava_pythia import LlavaPythiaVisionConfig
 
 
@@ -39,13 +37,11 @@ class CLIPVisionTower(CLIPPreTrainedModel):
         if type(images) is list:
             image_features = []
             for image in images:
-                image_forward_out = self.vision_model(image.to(device=self.device, dtype=self.dtype).unsqueeze(0),
-                                                      output_hidden_states=True)
+                image_forward_out = self.vision_model(image.to(device=self.device, dtype=self.dtype).unsqueeze(0), output_hidden_states=True)
                 image_feature = self.feature_select(image_forward_out).to(image.dtype)
                 image_features.append(image_feature)
         else:
-            image_forward_outs = self.vision_model(images.to(device=self.device, dtype=self.dtype),
-                                                   output_hidden_states=True)
+            image_forward_outs = self.vision_model(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
             image_features = self.feature_select(image_forward_outs).to(images.dtype)
 
         return image_features
@@ -71,15 +67,12 @@ class CLIPVisionTower(CLIPPreTrainedModel):
         return (self.config.image_size // self.config.patch_size) ** 2
 
 
-if __name__ == '__main__':
-    clip_config = CLIPVisionConfig.from_pretrained(
-        "/data/private/zhumj/GPTcode/mm-phi/openai/clip-vit-large-patch14-336"
-    )
-    print("################ clip_config ##############")
-    print(clip_config)
-    pythia_vis_config = LlavaPythiaVisionConfig(**clip_config.to_dict())
-    print("################ pythia_vis_config ##############")
-    print(pythia_vis_config)
+# if __name__ == '__main__':
+    # clip_config = CLIPVisionConfig.from_pretrained(
+    #     "path to model"
+    # )
+    # print(clip_config)
+    # pythia_vis_config = LlavaPythiaVisionConfig(**clip_config.to_dict())
+    # print(pythia_vis_config)
 
-    model = CLIPVisionTower(clip_config)
-    # print(list(model.vision_model.parameters())[0].dtype)
+    # model = CLIPVisionTower(clip_config)

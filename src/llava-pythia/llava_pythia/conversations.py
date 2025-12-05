@@ -1,6 +1,4 @@
-'''
-Might not need this since I work with base Llava model but keeping for now. TODO: (Ad) Remove if not needed.
-'''
+
 import dataclasses
 from enum import auto, Enum
 from typing import List, Tuple

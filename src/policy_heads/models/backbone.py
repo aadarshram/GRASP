@@ -12,7 +12,7 @@ from torchvision.models._utils import IntermediateLayerGetter
 from typing import Dict, List
 
 from policy_heads.util.misc import is_main_process, NestedTensor
-from .position_encoding import build_position_encoding
+from .positional_encoding import build_position_encoding
 
 import IPython
 e = IPython.embed
