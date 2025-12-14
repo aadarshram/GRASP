@@ -1,8 +1,9 @@
+import os
+os.environ["MUJOCO_GL"] = "egl"
 
 import numpy as np
 import h5py
 import argparse
-import os
 from pathlib import Path
 import metaworld
 import metaworld.policies
@@ -53,8 +54,14 @@ def generate_metaworld_episode(env_name, episode_length=500, image_size=(480, 64
         
         # Capture images
         # With render_mode='rgb_array' set at init, render() typically takes no args
-        img = env.render()
         
+        
+        
+        # img = env.render()
+        img = np.zeros((*image_size, 3), dtype=np.uint8)  
+
+
+
         # Resize/Verify size
         # Metaworld render output might be arbitrary size depending on mujoco config
         # We ensure it matches desired 480x640
