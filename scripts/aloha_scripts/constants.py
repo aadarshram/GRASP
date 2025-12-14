@@ -1,4 +1,3 @@
-
 ##################### Setting of training data #####################################
 
 # DATA_DIR = '/path/to/your/data_dir'
@@ -28,7 +27,7 @@ TASK_CONFIGS = {
     },
     'metaworld_task': {
         'dataset_dir': [
-            "/home/nightfury/Desktop/GRASP/data/metaworld_task",
+            "/kaggle/working/GRASP/data/metaworld_task",
         ],
         'episode_len': 500, # Matched to generation script
         'camera_names': ['left', 'right', 'top'],
