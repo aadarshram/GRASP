@@ -6,7 +6,7 @@
 TASK_CONFIGS = {
     'example_task_config': {
         'dataset_dir': [
-            "/path/to/your/data",  # TODO: Update this path to your HDF5 files
+            "/data/my_task",  # TODO: Update this path to your HDF5 files
         ],
         'episode_len': 1000,
         'camera_names': ['left', 'right', 'top'],  # TODO: Match your actual camera names in HDF5
@@ -17,7 +17,7 @@ TASK_CONFIGS = {
     },
     'vla_diff_head_lora': {
         'dataset_dir': [
-            "/home/aadarsh-ram/Projects/GRASP/GRASP/data/dummy_task",  # Dummy dataset for testing
+            "/home/nightfury/Desktop/GRASP/data/my_task",  # Dummy dataset for testing
         ],
         'episode_len': 1000,
         'camera_names': ['left', 'right', 'top'],  # Matches the dummy dataset cameras
@@ -25,6 +25,17 @@ TASK_CONFIGS = {
         'sample_weights': None,  # Optional: weights for sampling different datasets
         'train_ratio': 0.95,  # 95% train, 5% validation
         'name_filter': lambda n: n.endswith('.hdf5')  # Only load .hdf5 files
+    },
+    'metaworld_task': {
+        'dataset_dir': [
+            "/home/nightfury/Desktop/GRASP/data/metaworld_task",
+        ],
+        'episode_len': 500, # Matched to generation script
+        'camera_names': ['left', 'right', 'top'],
+        'stats_dir': None,
+        'sample_weights': None,
+        'train_ratio': 0.95,
+        'name_filter': lambda n: n.endswith('.hdf5')
     },
 }
 ####################################################################################

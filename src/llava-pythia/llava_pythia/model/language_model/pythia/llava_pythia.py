@@ -219,6 +219,27 @@ class LlavaPythiaForCausalLM(GPTNeoXPreTrainedModel, LlavaMetaForCausalLM):
             attentions=outputs.attentions,
         )
 
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **model_kwargs):
+        input_shape = input_ids.shape
+        # if model is used as a decoder in encoder-decoder model, the decoder attention mask is created on the fly
+        if attention_mask is None:
+            attention_mask = input_ids.new_ones(input_shape)
+
+        # cut decoder_input_ids if past is used
+        if past_key_values and past_key_values[0] is not None:
+            input_ids = input_ids[:, -1:]
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "past_key_values": past_key_values,
+            "use_cache": model_kwargs.get("use_cache"),
+            "images": model_kwargs.get("images", None),
+            "images_r": model_kwargs.get("images_r", None),
+            "images_top": model_kwargs.get("images_top", None),
+            "states": model_kwargs.get("states", None),
+        }
+
     def forward_fc_head(self, labels, actions, hidden_states, states):
         """
         Forward pass for the fully connected head (default setting).

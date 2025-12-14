@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Get absolute paths for all resources
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "=== GRASP VLA Training (Metaworld) ==="
+
+# Configuration
+ACTION_HEAD=droid_diffusion
+echo "Training LLaVA-Pythia on Metaworld Task with Action Head: $ACTION_HEAD"
+echo ""
+OUTPUT=outputs/metaworld_train
+
+# Create output directory
+mkdir -p $OUTPUT
+
+# Backup train script for reproducibility
+cp "$0" $OUTPUT/train.sh
+echo "Saved training script to: $OUTPUT/train.sh"
+echo ""
+
+echo "Starting training with DeepSpeed..."
+"$PROJECT_ROOT/.venv/bin/deepspeed" --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" \
+  --deepspeed "$PROJECT_ROOT/src/llava-pythia/scripts/zero3_offload.json" \
+  --lora_enable True \
+  --lora_module 'llm' \
+  --load_pretrain False \
+  --pretrain_image_size 320 \
+  --lora_r 64 \
+  --lora_alpha 256 \
+  --non_lora_lr 2e-5 \
+  --task_name "metaworld_task" \
+  --model_name_or_path "lesjie/Llava-Pythia-400M" \
+  --version v0 \
+  --tune_mm_mlp_adapter True \
+  --freeze_vision_tower True \
+  --freeze_backbone True \
+  --mm_use_im_start_end False \
+  --mm_use_im_patch_token False \
+  --image_aspect_ratio pad \
+  --group_by_modality_length False \
+  --bf16 True \
+  --output_dir $OUTPUT \
+  --max_steps 5 \
+  --per_device_train_batch_size 8 \
+  --gradient_accumulation_steps 4 \
+  --save_strategy "steps" \
+  --save_steps 5 \
+  --save_total_limit 5 \
+  --learning_rate 2e-4 \
+  --weight_decay 0. \
+  --warmup_ratio 0.005 \
+  --lr_scheduler_type "cosine" \
+  --logging_steps 1 \
+  --tf32 True \
+  --model_max_length 2048 \
+  --gradient_checkpointing True \
+  --dataloader_num_workers 4 \
+  --lazy_preprocess True \
+  --action_head_type $ACTION_HEAD \
+  --action_dim 4 \
+  --use_state True \
+  --concat "token_cat" \
+  --window_size 6 \
+  --report_to tensorboard \
+  --logging_dir $OUTPUT/log
+
+echo ""
+echo "Training complete!"

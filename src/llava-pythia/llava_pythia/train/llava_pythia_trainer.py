@@ -12,9 +12,11 @@ from transformers.trainer import (
     is_sagemaker_mp_enabled,
     get_parameter_names,
     has_length,
-    ALL_LAYERNORM_LAYERS,
     logger,
 )
+import random
+
+ALL_LAYERNORM_LAYERS = [nn.LayerNorm]
 from typing import List, Optional
 
 
@@ -145,6 +147,11 @@ class LengthGroupedSampler(Sampler):
 
 import numpy as np
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
 
 class CustomBatchSampler(Sampler):
     def __init__(self, batch_size, episode_len_l, sample_weights=None, replacement=True, eval=False):
@@ -193,7 +200,6 @@ class LLaVAPythiaTrainer(Trainer):
             "pin_memory": self.args.dataloader_pin_memory,
             "persistent_workers": self.args.dataloader_persistent_workers,
         }
-        from transformers.trainer_utils import seed_worker
         if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = CustomBatchSampler(**self.sampler_params['train'], eval=False)
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
@@ -350,7 +356,7 @@ class LLaVAPythiaTrainer(Trainer):
         return self.optimizer
 
     def _save_checkpoint(self, model, trial, metrics=None):
-        super(LLaVAPythiaTrainer, self)._save_checkpoint(model, trial, metrics)
+        super(LLaVAPythiaTrainer, self)._save_checkpoint(model, trial)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         super(LLaVAPythiaTrainer, self)._save(output_dir, state_dict)
