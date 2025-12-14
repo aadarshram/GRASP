@@ -56,7 +56,7 @@ deepspeed --master_port 29600 --num_gpus=2 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --tf32 False \
   --model_max_length 2048 \
   --gradient_checkpointing True \
-  --dataloader_num_workers 4 \
+  --dataloader_num_workers 2 \
   --lazy_preprocess True \
   --action_head_type $ACTION_HEAD \
   --action_dim 4 \
