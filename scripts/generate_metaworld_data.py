@@ -1,5 +1,9 @@
 import os
-os.environ["MUJOCO_GL"] = "egl"
+os.environ["MUJOCO_GL"] = "osmesa"
+import metaworld
+import gymnasium
+import mujoco
+
 
 import numpy as np
 import h5py
