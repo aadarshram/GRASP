@@ -63,7 +63,8 @@ deepspeed --master_port 29600 --num_gpus=2 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --use_state True \
   --concat "token_cat" \
   --window_size 6 \
-  --report_to tensorboard \
+  # --report_to tensorboard \
+  --report_to wandb \
   --logging_dir $OUTPUT/log
 
 echo ""

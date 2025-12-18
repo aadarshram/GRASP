@@ -9,7 +9,8 @@ from transformers import BitsAndBytesConfig
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ['DEVICE'] = "cuda"
-os.environ["WANDB_DISABLED"] = "true"
+# os.environ["WANDB_DISABLED"] = "true"
+os.environ["WANDB_DISABLED"] = "false"
 
 # Add paths for imports
 script_dir = os.path.dirname(__file__)
