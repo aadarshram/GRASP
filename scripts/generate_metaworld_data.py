@@ -57,8 +57,8 @@ def generate_metaworld_episode(env_name, episode_length=500, image_size=(480, 64
         
         
         
-        # img = env.render()
-        img = np.zeros((*image_size, 3), dtype=np.uint8)  
+        img = env.render()
+        # img = np.zeros((*image_size, 3), dtype=np.uint8)  
 
 
 

@@ -10,6 +10,11 @@ from transformers import BitsAndBytesConfig
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ['DEVICE'] = "cuda"
 # os.environ["WANDB_DISABLED"] = "true"
+os.environ["WANDB_API_KEY"] = "YOUR_WANDB_API_KEY_HERE" # Get this from wandb.ai/authorize
+os.environ["WANDB_PROJECT"] = "vla_grasping_project"
+os.environ["WANDB_LOG_MODEL"] = "checkpoint"  # Uploads checkpoints to W&B
+os.environ["WANDB_WATCH"] = "all"
+os.environ["WANDB_SILENT"] = "true"
 os.environ["WANDB_DISABLED"] = "false"
 
 # Add paths for imports
