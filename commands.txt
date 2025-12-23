@@ -1,0 +1,12 @@
+python scripts/generate_metaworld_data.py --num_episodes 5 --output_dir data/metaworld_task
+bash scripts/train_metaworld.sh
+python scripts/eval_metaworld.py --ckpt_path outputs/metaworld_train/checkpoint-5 --num_episodes 1
+
+export MUJOCO_GL=egl
+python scripts/generate_metaworld_data.py \
+  --num_episodes 5 \
+  --num_workers 4 \
+  --output_dir data/metaworld_dataset \
+  --early_stop
+
+Duration: With the default frame skip of 5 and simulation timestep of 0.0025s (from your environment inspection), this equals 6.25 seconds of simulation time (500 steps × 0.0125s).
