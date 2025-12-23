@@ -6,16 +6,18 @@ from typing import Optional
 import torch
 import transformers
 from transformers import BitsAndBytesConfig
+import warnings
+# warnings.filterwarnings("ignore", category=FutureWarning, module="deepspeed") # Patched
+# warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ['DEVICE'] = "cuda"
 # os.environ["WANDB_DISABLED"] = "true"
-os.environ["WANDB_API_KEY"] = "YOUR_WANDB_API_KEY_HERE" # Get this from wandb.ai/authorize
-os.environ["WANDB_PROJECT"] = "vla_grasping_project"
-os.environ["WANDB_LOG_MODEL"] = "checkpoint"  # Uploads checkpoints to W&B
-os.environ["WANDB_WATCH"] = "all"
-os.environ["WANDB_SILENT"] = "true"
-os.environ["WANDB_DISABLED"] = "false"
+
+import deepspeed
+from deepspeed.runtime.zero.config import ZeroStageEnum
+from deepspeed.runtime.fp16.loss_scaler import LossScaler
+torch.serialization.add_safe_globals([ZeroStageEnum, LossScaler])
 
 # Add paths for imports
 script_dir = os.path.dirname(__file__)
@@ -59,6 +61,7 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
 
     concat: str = field(default="None")
+    model_pretrain: Optional[str] = field(default=None)
 
 @dataclass
 class DataArguments:
@@ -109,6 +112,7 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_weight_path: str = ""
     lora_bias: str = "none"
     non_lora_lr: Optional[float] = 3e-5 # learning rate for non lora part: Diffusion Policy head;
+    resume_from_checkpoint: Optional[str] = field(default=None) # path to checkpoint to resume from
     # learning_rate is inherited from parent class, used for lora part
     group_by_modality_length: bool = field(default=False)
 
@@ -217,7 +221,7 @@ def train_bc(train_dataset=None, val_dataset=None, model=None, config=None, samp
                                  sampler_params=sampler_params,
                                  **data_module)
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=config['training_args'].resume_from_checkpoint)
 
     trainer.save_state()
 
