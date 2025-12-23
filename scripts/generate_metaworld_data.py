@@ -12,6 +12,8 @@ import mujoco
 import multiprocessing
 from functools import partial
 
+os.environ["MUJOCO_GL"] = "egl"
+
 def look_at_quat(pos, target, up=np.array([0, 0, 1])):
     z_axis = pos - target
     z_axis = z_axis / np.linalg.norm(z_axis)
