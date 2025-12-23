@@ -3,6 +3,7 @@
 # Get absolute paths for all resources
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export PATH="$PROJECT_ROOT/.venv/bin:$PATH"
 
 echo "=== GRASP VLA Training (Metaworld) ==="
 
@@ -19,6 +20,15 @@ mkdir -p $OUTPUT
 cp "$0" $OUTPUT/train.sh
 echo "Saved training script to: $OUTPUT/train.sh"
 echo ""
+
+# Check for latest checkpoint
+LATEST_CHECKPOINT=$(ls -td $OUTPUT/checkpoint-* 2>/dev/null | head -1)
+if [ -n "$LATEST_CHECKPOINT" ]; then
+  echo "Found checkpoint: $LATEST_CHECKPOINT"
+  RESUME_ARGS="--resume_from_checkpoint $LATEST_CHECKPOINT"
+else
+  RESUME_ARGS=""
+fi
 
 echo "Starting training with DeepSpeed..."
 "$PROJECT_ROOT/.venv/bin/deepspeed" --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" \
@@ -42,12 +52,12 @@ echo "Starting training with DeepSpeed..."
   --group_by_modality_length False \
   --bf16 True \
   --output_dir $OUTPUT \
-  --max_steps 5 \
-  --per_device_train_batch_size 8 \
-  --gradient_accumulation_steps 4 \
+  --max_steps 4000 \
+  --per_device_train_batch_size 50 \
+  --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
-  --save_steps 5 \
-  --save_total_limit 5 \
+  --save_steps 400 \
+  --save_total_limit 3 \
   --learning_rate 2e-4 \
   --weight_decay 0. \
   --warmup_ratio 0.005 \
@@ -60,11 +70,14 @@ echo "Starting training with DeepSpeed..."
   --lazy_preprocess True \
   --action_head_type $ACTION_HEAD \
   --action_dim 4 \
+  --state_dim 16 \
   --use_state True \
   --concat "token_cat" \
   --window_size 6 \
-  --report_to tensorboard \
-  --logging_dir $OUTPUT/log
+  --report_to wandb \
+  --run_name "metaworld_overfit_test" \
+  --logging_dir $OUTPUT/log \
+  $RESUME_ARGS
 
 echo ""
 echo "Training complete!"

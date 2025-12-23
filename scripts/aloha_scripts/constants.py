@@ -28,10 +28,10 @@ TASK_CONFIGS = {
     },
     'metaworld_task': {
         'dataset_dir': [
-            "/home/nightfury/Desktop/GRASP/data/metaworld_task",
+            "/home/nightfury/Desktop/GRASP/data/metaworld_dataset",
         ],
         'episode_len': 500, # Matched to generation script
-        'camera_names': ['left', 'right', 'top'],
+        'camera_names': ['front', 'top'],
         'stats_dir': None,
         'sample_weights': None,
         'train_ratio': 0.95,

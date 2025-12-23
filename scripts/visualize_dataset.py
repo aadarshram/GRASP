@@ -12,6 +12,7 @@ def visualize_episode(file_path):
         if '/observations/images/left' in f: cameras.append('left')
         if '/observations/images/right' in f: cameras.append('right')
         if '/observations/images/top' in f: cameras.append('top')
+        if '/observations/images/front' in f: cameras.append('front')
         
         if not cameras:
             print("No images found in file.")
@@ -27,18 +28,17 @@ def visualize_episode(file_path):
             imgs = []
             for cam in cameras:
                 img = f['/observations/images/' + cam][t]
-                # If compressed, might need decoding, but validate_dataset checks for that.
-                # Assuming raw for now based on generation script.
-                if len(img.shape) == 1: # Compressed
+                if len(img.shape) == 1:
                     img = cv2.imdecode(img, cv2.IMREAD_COLOR)
                 else:
-                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR) # Convert to BGR for opencv
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
                 
-                # Add label
-                cv2.putText(img, cam, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # label mapping
+                labels = {'left': 'Corner', 'right': 'Corner 2', 'top': 'Top', 'front': 'Front'}
+                label = labels.get(cam, cam.capitalize())
+                cv2.putText(img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 imgs.append(img)
             
-            # Concatenate horizontally
             display_img = np.hstack(imgs)
             cv2.imshow('Episode Visualization', display_img)
             
@@ -51,7 +51,7 @@ def visualize_episode(file_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', type=str, help='Path to HDF5 file')
-    parser.add_argument('--dir', type=str, default='data/metaworld_task', help='Directory to search for files')
+    parser.add_argument('--dir', type=str, default='data/metaworld_dataset', help='Directory to search for files')
     args = parser.parse_args()
     
     if args.file:

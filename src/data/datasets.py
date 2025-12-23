@@ -62,7 +62,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
             self.augment_images = False
         self.transformations = None
         a = self.__getitem__(0) # initialize self.is_sim and self.transformations
-        if len(a['image_top'].shape) == 4:
+        if 'image_top' in a and len(a['image_top'].shape) == 4:
             print("%"*40)
             print("There are three views: left, right, top")
         # is_sim indicates whether the data comes from a simulation environment.

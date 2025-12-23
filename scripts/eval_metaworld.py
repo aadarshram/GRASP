@@ -192,6 +192,8 @@ def main():
         obs = env.reset()
         if isinstance(obs, tuple): obs = obs[0]
         
+        episode_frames = []
+        
         # Initial robot state
         # In this specific simplified setup, we might rely on the environment's observation (which contains qpos)
         # OR we need to access output of 'env.sim.data.qpos'.
@@ -201,27 +203,15 @@ def main():
         step = 0
         done = False
         
-        # For temporal aggregation or just history
-        # Model expects window_size=6?
-        # But 'forward' handles inference with diffusion head autoregressively if eval=True?
-        # Let's check `forward_diffusion_head`... "else: inference time... B=1... initialize noise... scheduler step..."
-        # It generates ONE action sequence (chunk).
-        
-        # We need to execute the first action of the chunk, then replan? Or execute open-loop?
-        # Standard ACT/Diffusion Policy executes a chunk (temporal aggregation).
-        # For simplicity, let's replan every step or every N steps.
-        
         while not done and step < 500:
             # Capture Images
             img = env.render()
             img = cv2.resize(img, (320, 180)) # Match training aspect ratio/size? 
-            # Training script default: --pretrain_image_size 320 -> usually means 336 or something?
-            # Wait, dataloader sees (320, 180) from generator? No, generator saved 480x640.
-            # processor.parses_image uses image_aspect_ratio 'pad'. 
-            # let's just resize to square 336 (standard LLaVA) or whatever the processor does.
-            # The processor `expand2square` pads it.
-            # We'll rely on `image_processor` call.
             
+            # Save frame for video
+            # Convert RGB to BGR for OpenCV
+            episode_frames.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
             img_pil = Image.fromarray(img)
             # Preprocess image
             image_tensor = image_processor.preprocess(img_pil, return_tensors='pt')['pixel_values'][0]
@@ -273,14 +263,6 @@ def main():
             else:
                 next_obs, reward, done, info = step_result
 
-            img = env.render()
-            img_resize = cv2.resize(img, (320, 180)) # Resize for video/model
-            
-            # Save frame for video
-            if ep == 0:
-                # Convert RGB to BGR for OpenCV
-                frames.append(cv2.cvtColor(img_resize, cv2.COLOR_RGB2BGR))
-                
             if info.get('success', False):
                 successes += 1
                 print(f"Episode {ep}: SUCCESS at step {step}")
@@ -291,18 +273,16 @@ def main():
             
         print(f"Episode {ep} finished. Success: {info.get('success', False)}")
 
-    print(f"Final Success Rate: {successes}/{args.num_episodes}")
-    
-    # Save Video
-    if frames:
-        video_path = "eval_metaworld.mp4"
-        height, width, _ = frames[0].shape
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(video_path, fourcc, 30.0, (width, height))
-        for frame in frames:
-            out.write(frame)
-        out.release()
-        print(f"Saved evaluation video to {os.path.abspath(video_path)}")
+        # Save Video for this episode
+        if episode_frames:
+            video_path = f"eval_metaworld_ep{ep}.mp4"
+            height, width, _ = episode_frames[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(video_path, fourcc, 30.0, (width, height))
+            for frame in episode_frames:
+                out.write(frame)
+            out.release()
+            print(f"Saved evaluation video to {os.path.abspath(video_path)}")
 
 if __name__ == "__main__":
     main()

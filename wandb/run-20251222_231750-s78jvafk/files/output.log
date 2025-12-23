@@ -1,0 +1,184 @@
+  0%| | 0/1000 [00:00<?/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/utils/checkpoint.py:85: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/nightfury/Desktop/GRASP/scripts/train.py", line 303, in <module>
+    main(config=config, llava_pythia_config=llava_pythia_config)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/scripts/train.py", line 284, in main
+    best_ckpt_info = train_bc(train_dataset=train_dataset, model=model, val_dataset=val_dataset, config=config, sampler_params=sampler_params, tokenizer=tokenizer)
+  File "/home/nightfury/Desktop/GRASP/scripts/train.py", line 218, in train_bc
+    trainer.train()
+    ~~~~~~~~~~~~~^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 2325, in train
+    return inner_training_loop(
+        args=args,
+    ...<2 lines>...
+        ignore_keys_for_eval=ignore_keys_for_eval,
+    )
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 2674, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 4020, in training_step
+    loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 4110, in compute_loss
+    outputs = model(**inputs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/utils/nvtx.py", line 15, in wrapped_fn
+    ret_val = func(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/engine.py", line 1735, in forward
+    loss = self.module(*inputs, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+    return inner()
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+    result = forward_call(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/peft/peft_model.py", line 1923, in forward
+    return self.base_model(
+           ~~~~~~~~~~~~~~~^
+        input_ids=input_ids,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+    return inner()
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+    result = forward_call(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/peft/tuners/tuners_utils.py", line 308, in forward
+    return self.model.forward(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/src/data/../llava-pythia/llava_pythia/model/language_model/pythia/llava_pythia.py", line 204, in forward
+    loss = self.forward_diffusion_head(actions, hidden_states, states, is_pad)
+  File "/home/nightfury/Desktop/GRASP/src/data/../llava-pythia/llava_pythia/model/language_model/pythia/llava_pythia.py", line 375, in forward_diffusion_head
+    noise_pred = self.embed_out(noisy_actions, timesteps, global_cond=hidden_states, states=states)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+    return inner()
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+    result = forward_call(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/src/policy_heads/models/droid_unet_diffusion.py", line 270, in forward
+    global_cond = self.combine(global_cond)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+    return inner()
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+    result = forward_call(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/zero/linear.py", line 114, in zero3_linear_wrap
+    return LinearFunctionForZeroStage3.apply(input, weight, bias)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/autograd/function.py", line 581, in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/amp/autocast_mode.py", line 527, in decorate_fwd
+    return fwd(*args, **kwargs)
+  File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/zero/linear.py", line 61, in forward
+    ret = torch.addmm(bias, input, weight.t())
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (8x528 and 519x512)
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/nightfury/Desktop/GRASP/scripts/train.py", line 303, in <module>
+[rank0]:     main(config=config, llava_pythia_config=llava_pythia_config)
+[rank0]:     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/scripts/train.py", line 284, in main
+[rank0]:     best_ckpt_info = train_bc(train_dataset=train_dataset, model=model, val_dataset=val_dataset, config=config, sampler_params=sampler_params, tokenizer=tokenizer)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/scripts/train.py", line 218, in train_bc
+[rank0]:     trainer.train()
+[rank0]:     ~~~~~~~~~~~~~^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 2325, in train
+[rank0]:     return inner_training_loop(
+[rank0]:         args=args,
+[rank0]:     ...<2 lines>...
+[rank0]:         ignore_keys_for_eval=ignore_keys_for_eval,
+[rank0]:     )
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 2674, in _inner_training_loop
+[rank0]:     tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 4020, in training_step
+[rank0]:     loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/transformers/trainer.py", line 4110, in compute_loss
+[rank0]:     outputs = model(**inputs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/utils/nvtx.py", line 15, in wrapped_fn
+[rank0]:     ret_val = func(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/engine.py", line 1735, in forward
+[rank0]:     loss = self.module(*inputs, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+[rank0]:     return inner()
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+[rank0]:     result = forward_call(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/peft/peft_model.py", line 1923, in forward
+[rank0]:     return self.base_model(
+[rank0]:            ~~~~~~~~~~~~~~~^
+[rank0]:         input_ids=input_ids,
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^
+[rank0]:     ...<6 lines>...
+[rank0]:         **kwargs,
+[rank0]:         ^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+[rank0]:     return inner()
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+[rank0]:     result = forward_call(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/peft/tuners/tuners_utils.py", line 308, in forward
+[rank0]:     return self.model.forward(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/src/data/../llava-pythia/llava_pythia/model/language_model/pythia/llava_pythia.py", line 204, in forward
+[rank0]:     loss = self.forward_diffusion_head(actions, hidden_states, states, is_pad)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/src/data/../llava-pythia/llava_pythia/model/language_model/pythia/llava_pythia.py", line 375, in forward_diffusion_head
+[rank0]:     noise_pred = self.embed_out(noisy_actions, timesteps, global_cond=hidden_states, states=states)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+[rank0]:     return inner()
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+[rank0]:     result = forward_call(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/src/policy_heads/models/droid_unet_diffusion.py", line 270, in forward
+[rank0]:     global_cond = self.combine(global_cond)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1881, in _call_impl
+[rank0]:     return inner()
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1829, in inner
+[rank0]:     result = forward_call(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/nn/modules/linear.py", line 134, in forward
+[rank0]:     return F.linear(input, self.weight, self.bias)
+[rank0]:            ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/zero/linear.py", line 114, in zero3_linear_wrap
+[rank0]:     return LinearFunctionForZeroStage3.apply(input, weight, bias)
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/autograd/function.py", line 581, in apply
+[rank0]:     return super().apply(*args, **kwargs)  # type: ignore[misc]
+[rank0]:            ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/torch/amp/autocast_mode.py", line 527, in decorate_fwd
+[rank0]:     return fwd(*args, **kwargs)
+[rank0]:   File "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/zero/linear.py", line 61, in forward
+[rank0]:     ret = torch.addmm(bias, input, weight.t())
+[rank0]: RuntimeError: mat1 and mat2 shapes cannot be multiplied (8x528 and 519x512)
