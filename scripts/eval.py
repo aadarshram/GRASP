@@ -45,7 +45,7 @@ Example Usage:
 4. Evaluate HuggingFace model on Libero:
    python scripts/eval.py \
        --env_type libero \
-       --task_suite_name libero_10 \
+       --task_suite_name libero_spatial \
        --task_id 0 \
        --hf_model hz1919810/TinyVLA-droid_diffusion_metaworld \
        --hf_head_file diff_head_raw_final.pth \
@@ -58,6 +58,8 @@ Output:
 -------
 - Evaluation videos are saved to: outputs/eval/eval_{env_type}_{task_name}_ep{episode_id}.mp4
 - Videos show three camera views stacked horizontally: [left, top, right]
+- metaworld cam ids: { 0: top, 1: left, 2: right, 3: top-right, 4: front, 5: gripper}
+- libero camera names: agentview, birdview, sideview, robot0_eye_in_hand, frontview, galleryview, robot0_robotview
 - Console outputs success rate and episode statistics
 """
 
@@ -414,48 +416,47 @@ def main():
         for _ in range(5):
             env.step(np.zeros(args.action_dim))
     
-    def render_from_camera(camera_id, image_size=(180, 320)):
+    def render_from_camera(camera_id=None, camera_name=None, image_size=(180, 320)):
         """
         Render from a specific camera.
         
         Args:
-            camera_id: Camera index (0=left/agentview, 1=top/eye_in_hand, 2=right/birdview)
+            camera_id: Camera index for Metaworld
+            camera_name: Camera name for Libero (overrides camera_id if provided)
             image_size: Tuple of (height, width)
             
         Returns:
             RGB image array
         """
         if args.env_type == "libero":
-            camera_names = ["agentview", "robot0_eye_in_hand", "birdview"]
-            if camera_id < len(camera_names):
+            # Use camera_name if provided, otherwise fall back to index-based lookup
+            if camera_name is None:
+                camera_names = ["agentview", "robot0_eye_in_hand", "birdview"]
+                if camera_id < len(camera_names):
+                    camera_name = camera_names[camera_id]
+                else:
+                    camera_name = "agentview"
+            
+            try:
+                img = env.sim.render(
+                    height=image_size[0], 
+                    width=image_size[1], 
+                    camera_name=camera_name
+                )
+                img = img[::-1]  # Flip vertically (MuJoCo convention)
+                return img
+            except Exception as e:
+                print(f"Warning: Could not render from camera {camera_name}: {e}")
                 try:
                     img = env.sim.render(
                         height=image_size[0], 
                         width=image_size[1], 
-                        camera_name=camera_names[camera_id]
+                        camera_name="agentview"
                     )
-                    img = img[::-1]  # Flip vertically (MuJoCo convention)
+                    img = img[::-1]
                     return img
-                except Exception as e:
-                    print(f"Warning: Could not render from camera {camera_names[camera_id]}: {e}")
-                    try:
-                        img = env.sim.render(
-                            height=image_size[0], 
-                            width=image_size[1], 
-                            camera_name="agentview"
-                        )
-                        img = img[::-1]
-                        return img
-                    except:
-                        return np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
-            else:
-                img = env.sim.render(
-                    height=image_size[0], 
-                    width=image_size[1], 
-                    camera_name="agentview"
-                )
-                img = img[::-1]
-                return img
+                except:
+                    return np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
         else:
             # Metaworld: switch camera ID, render, then restore
             original_camera_id = env.mujoco_renderer.camera_id
@@ -490,26 +491,29 @@ def main():
         done = False
         
         while not done and step < 500:
-            # Render multi-camera views
+            # Render 4-camera views for both environments
             if args.env_type == "metaworld":
-                # Metaworld: Camera IDs 1 (left), 2 (right), 0 (top)
-                img_left = cv2.rotate(render_from_camera(1, image_size=(180, 320)), cv2.ROTATE_180)
-                img_right = cv2.rotate(render_from_camera(2, image_size=(180, 320)), cv2.ROTATE_180)
-                img_top = render_from_camera(0, image_size=(180, 320))
+                # METAWORLD cam ids: { 0: top, 1: left, 2: right, 3: top-right, 4: front, 5: gripper}
+                img_bottom_left = cv2.rotate(render_from_camera(camera_id=1, image_size=(180, 320)), cv2.ROTATE_180)
+                img_bottom_right = cv2.rotate(render_from_camera(camera_id=2, image_size=(180, 320)), cv2.ROTATE_180)
+                img_top_left = render_from_camera(camera_id=0, image_size=(180, 320))
+                img_top_right = render_from_camera(camera_id=4, image_size=(180, 320))
             else:
-                # Libero: agentview, robot0_eye_in_hand, birdview
-                img_left = render_from_camera(0, image_size=(180, 320))
-                img_right = render_from_camera(1, image_size=(180, 320))
-                img_top = render_from_camera(2, image_size=(180, 320))
+                # LIBERO camera names: agentview, birdview, sideview, robot0_eye_in_hand, frontview, galleryview, robot0_robotview
+                img_top_right = render_from_camera(camera_name="frontview", image_size=(180, 320))
+                img_top_left = render_from_camera(camera_name="birdview", image_size=(180, 320))
+                img_bottom_left = render_from_camera(camera_name="sideview", image_size=(180, 320))
+                img_bottom_right = render_from_camera(camera_name="agentview", image_size=(180, 320))
             
-            # Stack horizontally [left, top, right] and save for video
-            img_combined = np.hstack([img_left, img_top, img_right])
+            top_row = np.hstack([img_top_left, img_top_right])
+            bottom_row = np.hstack([img_bottom_left, img_bottom_right])
+            img_combined = np.vstack([top_row, bottom_row])
             episode_frames.append(cv2.cvtColor(img_combined, cv2.COLOR_RGB2BGR))
 
             # Preprocess images for VLM
-            image_tensor_left = image_processor.preprocess(Image.fromarray(img_left), return_tensors='pt')['pixel_values'][0]
-            image_tensor_right = image_processor.preprocess(Image.fromarray(img_right), return_tensors='pt')['pixel_values'][0]
-            image_tensor_top = image_processor.preprocess(Image.fromarray(img_top), return_tensors='pt')['pixel_values'][0]
+            image_tensor_left = image_processor.preprocess(Image.fromarray(img_bottom_left), return_tensors='pt')['pixel_values'][0]
+            image_tensor_right = image_processor.preprocess(Image.fromarray(img_bottom_right), return_tensors='pt')['pixel_values'][0]
+            image_tensor_top = image_processor.preprocess(Image.fromarray(img_top_left), return_tensors='pt')['pixel_values'][0]
             
             images = image_tensor_left.unsqueeze(0).cuda().float()
             images_r = image_tensor_right.unsqueeze(0).cuda().float()
