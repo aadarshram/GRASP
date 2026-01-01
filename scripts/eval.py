@@ -17,7 +17,7 @@ Example Usage:
        --ckpt_path outputs/metaworld_train/checkpoint-4000 \
        --action_dim 4 \
        --state_dim 7 \
-       --num_episodes 5 \
+       --num_episodes 1 \
        --output_dir outputs/eval/sachin_model
 
 2. Evaluate local checkpoint on Libero:
@@ -201,20 +201,6 @@ def main():
         image_processor=None # Will be loaded
     )
     
-    # We cheat slightly: load_llava_pythia usually loads base + applies LoRA.
-    # But since we have a checkpoint with 'adapter_model.bin' (LoRA) and potentially non-lora weights,
-    # we need to ensure we load the base model first, then the checkpoint.
-    
-    # Actually, for evaluation, we can use the same loading logic as train.py but 
-    # instead of initializing fresh LoRA, we load the saved one.
-    
-    # However, 'load_llava_pythia' in 'llava_pythia_utils.py' is designed for training setup.
-    # It initializes a fresh LoRA config if 'load_pretrain' is False.
-    # If we want to load a TRAINED checkpoint, we should treat it as 'load_pretrain=True' 
-    # OR let it init fresh and then overwrite with PeftModel.from_pretrained.
-    
-    # Let's try the standard path: Load base model, then load adapter.
-    
     # Initialize tokenizer
     base_model_name = args.base_model
     tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -224,19 +210,57 @@ def main():
     )
     tokenizer.pad_token_id = 1
 
-    # Configure action head
-    llava_pythia_config = LlavaPythiaConfig.from_pretrained(base_model_name, trust_remote_code=True)
-    llava_pythia_config.action_head_type = 'droid_diffusion'
-    llava_pythia_config.action_dim = args.action_dim
-    llava_pythia_config.state_dim = args.state_dim
-    llava_pythia_config.chunk_size = 16
-    llava_pythia_config.concat = "token_cat"
+    # Configure action head - load config from checkpoint if available
+    use_lora = args.ckpt_path is not None  # LoRA only for local checkpoints
+    
+    if use_lora:
+        # For local checkpoints, load config from the checkpoint's config.json
+        # which contains the exact architecture parameters used during training
+        ckpt_path_abs = os.path.abspath(args.ckpt_path)
+        config_path = os.path.join(ckpt_path_abs, "config.json")
+        if not os.path.exists(config_path):
+            # Check parent directory (checkpoint is like outputs/metaworld_train/checkpoint-4000)
+            parent_dir = os.path.dirname(ckpt_path_abs.rstrip('/'))
+            config_path = os.path.join(parent_dir, "config.json")
+        
+        if os.path.exists(config_path):
+            print(f"Loading model config from checkpoint: {config_path}")
+            llava_pythia_config = LlavaPythiaConfig.from_pretrained(
+                os.path.dirname(config_path), trust_remote_code=True
+            )
+            # Override action_dim and state_dim from config if present
+            print(f"  action_dim: {llava_pythia_config.action_dim}")
+            print(f"  state_dim: {llava_pythia_config.state_dim}")
+            print(f"  chunk_size: {llava_pythia_config.chunk_size}")
+        else:
+            print(f"Warning: config.json not found at checkpoint, using default config")
+            llava_pythia_config = LlavaPythiaConfig.from_pretrained(base_model_name, trust_remote_code=True)
+            llava_pythia_config.action_head_type = 'droid_diffusion'
+            llava_pythia_config.action_dim = args.action_dim
+            llava_pythia_config.state_dim = args.state_dim
+            llava_pythia_config.chunk_size = 16
+            llava_pythia_config.concat = "token_cat"
+    else:
+        # For HuggingFace models, use provided args
+        llava_pythia_config = LlavaPythiaConfig.from_pretrained(base_model_name, trust_remote_code=True)
+        llava_pythia_config.action_head_type = 'droid_diffusion'
+        llava_pythia_config.action_dim = args.action_dim
+        llava_pythia_config.state_dim = args.state_dim
+        llava_pythia_config.chunk_size = 16
+        llava_pythia_config.concat = "token_cat"
+
+    # Store the actual state_dim from config for inference (may differ from args.state_dim)
+    actual_state_dim = llava_pythia_config.state_dim
+    actual_action_dim = llava_pythia_config.action_dim
+    print(f"Using state_dim={actual_state_dim}, action_dim={actual_action_dim} for inference")
 
     model_args.model_name_or_path = base_model_name
-    use_lora = args.ckpt_path is not None  # LoRA only for local checkpoints
-    training_args.lora_enable = use_lora
+    
+    # For local checkpoint loading, we'll load base model without LoRA first,
+    # then manually apply the checkpoint weights (following load_pretrain pattern)
+    training_args.lora_enable = False  # Don't init fresh LoRA
 
-    # Load base model with LoRA initialized (will be overwritten by checkpoint weights)
+    # Load base model WITHOUT LoRA (we'll add trained LoRA later for local checkpoints)
     config = {
         'model_args': model_args,
         'training_args': training_args,
@@ -286,66 +310,82 @@ def main():
             raise
     else:
         # Load from local checkpoint (LoRA adapters + non-LoRA weights)
+        # This follows the same pattern as load_llava_pythia with load_pretrain=True
         if args.ckpt_path:
             ckpt_path_abs = os.path.abspath(args.ckpt_path)
             print(f"Loading from local checkpoint: {ckpt_path_abs}...")
             
-            # 1. Load non-LoRA weights (mm_projector, action_head)
+            # Determine paths for non-LoRA weights and LoRA adapter
+            # non_lora_trainables.bin is saved at the OUTPUT_DIR root, not inside checkpoint folders
+            # LoRA adapter files (adapter_config.json, adapter_model.safetensors) are in the checkpoint folder
+            
+            # Check if ckpt_path is a checkpoint subfolder or the main output directory
             non_lora_path = os.path.join(ckpt_path_abs, "non_lora_trainables.bin")
             if not os.path.exists(non_lora_path):
+                # If checkpoint is like "outputs/metaworld_train/checkpoint-4000", 
+                # non_lora_trainables.bin is in "outputs/metaworld_train/"
                 parent_dir = os.path.dirname(ckpt_path_abs.rstrip('/'))
                 non_lora_path = os.path.join(parent_dir, "non_lora_trainables.bin")
-
+            
+            # Determine LoRA adapter path
+            adapter_config_path = os.path.join(ckpt_path_abs, "adapter_config.json")
+            if os.path.exists(adapter_config_path):
+                lora_adapter_path = ckpt_path_abs
+            else:
+                # Maybe ckpt_path is the output root, not a checkpoint folder
+                # Look for adapter in the root
+                lora_adapter_path = ckpt_path_abs if os.path.exists(os.path.join(ckpt_path_abs, "adapter_config.json")) else None
+            
+            # 1. Load non-LoRA trainable weights (mm_projector, embed_out, proj_to_action, action_head)
+            # Following the exact key transformation from load_llava_pythia load_pretrain path
             if os.path.exists(non_lora_path):
                 print(f"Loading non-LoRA weights from {non_lora_path}...")
-                non_lora_state_dict = torch.load(non_lora_path, map_location='cpu')
+                non_lora_trainables = torch.load(non_lora_path, map_location='cpu')
                 
-                # Clean up PEFT key prefixes
-                new_state_dict = {}
-                for k, v in non_lora_state_dict.items():
-                    k = k.replace('base_model.model.', '')
-                    new_state_dict[k] = v
-                    
-                model.load_state_dict(new_state_dict, strict=False)
+                # Step 1: Strip 'base_model.' prefix (11 characters) - matches reference implementation
+                non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v 
+                                       for k, v in non_lora_trainables.items()}
+                
+                # Step 2: If keys have 'model.gpt_neox.' prefix, strip 'model.' (6 characters)
+                if any(k.startswith('model.gpt_neox.') for k in non_lora_trainables):
+                    non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v 
+                                           for k, v in non_lora_trainables.items()}
+                
+                # Step 3: Remove any lora-related keys
+                keys_to_del = [k for k in non_lora_trainables.keys() if 'lora' in k]
+                for key in keys_to_del:
+                    del non_lora_trainables[key]
+                
+                missing, unexpected = model.load_state_dict(non_lora_trainables, strict=False)
+                print(f"Loaded non-LoRA weights. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+                if unexpected:
+                    print(f"  Unexpected keys (first 5): {unexpected[:5]}")
             else:
-                print("Warning: non_lora_trainables.bin not found! Model might be untrained.")
+                print(f"Warning: non_lora_trainables.bin not found at {non_lora_path}!")
+                print("  Model might be untrained or using different checkpoint structure.")
 
-            # 2. Load LoRA adapter weights
-            if use_lora:
-                adapter_config_path = os.path.join(ckpt_path_abs, "adapter_config.json")
-                adapter_weights_path = os.path.join(ckpt_path_abs, "adapter_model.bin")
+            # 2. Load LoRA adapter weights using PeftModel.from_pretrained
+            if lora_adapter_path and os.path.exists(os.path.join(lora_adapter_path, "adapter_config.json")):
+                print(f"Loading LoRA adapter from {lora_adapter_path}...")
                 
-                # Try safetensors first, then bin
-                if not os.path.exists(adapter_weights_path):
-                    adapter_weights_path = os.path.join(ckpt_path_abs, "adapter_model.safetensors")
-                
-                if os.path.exists(adapter_config_path) and os.path.exists(adapter_weights_path):
-                    print(f"Loading LoRA adapter from {ckpt_path_abs}...")
+                try:
+                    from peft import PeftModel
                     
-                    try:
-                        if adapter_weights_path.endswith('.safetensors'):
-                            from safetensors.torch import load_file as load_safetensors
-                            adapter_state_dict = load_safetensors(adapter_weights_path)
-                        else:
-                            adapter_state_dict = torch.load(adapter_weights_path, map_location='cpu')
-                        
-                        # Clean up keys
-                        lora_state_dict = {}
-                        for k, v in adapter_state_dict.items():
-                            k_clean = k.replace('base_model.model.', '')
-                            lora_state_dict[k_clean] = v
-                        
-                        missing, unexpected = model.load_state_dict(lora_state_dict, strict=False)
-                        print(f"Loaded LoRA adapter. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
-                    except Exception as e:
-                        print(f"Error loading LoRA adapter: {e}")
-                        import traceback
-                        traceback.print_exc()
-                else:
-                    print(f"Warning: LoRA adapter files not found in {ckpt_path_abs}")
-                    print(f"  - adapter_config.json exists: {os.path.exists(adapter_config_path)}")
-                    print(f"  - adapter_model.bin exists: {os.path.exists(os.path.join(ckpt_path_abs, 'adapter_model.bin'))}")
-                    print(f"  - adapter_model.safetensors exists: {os.path.exists(os.path.join(ckpt_path_abs, 'adapter_model.safetensors'))}")
+                    # Load the LoRA adapter using PEFT's proper loading mechanism
+                    print('Loading LoRA weights...')
+                    model = PeftModel.from_pretrained(model, lora_adapter_path)
+                    print('Merging LoRA weights...')
+                    model = model.merge_and_unload()
+                    print('Model is loaded with LoRA weights merged.')
+                    
+                except Exception as e:
+                    print(f"Error loading LoRA adapter: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
+            else:
+                print(f"Warning: LoRA adapter not found in {ckpt_path_abs}")
+                print(f"  Searched for adapter_config.json at: {os.path.join(ckpt_path_abs, 'adapter_config.json')}")
     
     model.cuda()
     model.eval()
@@ -525,13 +565,26 @@ def main():
             input_ids = tokenizer_image_token(context, tokenizer, return_tensors='pt').unsqueeze(0).cuda()
             
             # Get robot proprioception (joint positions)
+            # Use actual_state_dim from the loaded checkpoint config
             try:
                 if args.env_type == "metaworld":
-                    qpos = env.sim.data.qpos.flat[:].copy()[:args.state_dim]
+                    # Get all available qpos and pad/truncate to actual_state_dim
+                    full_qpos = env.sim.data.qpos.flat[:].copy()
+                    if len(full_qpos) >= actual_state_dim:
+                        qpos = full_qpos[:actual_state_dim]
+                    else:
+                        # Pad with zeros if qpos is smaller than expected
+                        qpos = np.zeros(actual_state_dim)
+                        qpos[:len(full_qpos)] = full_qpos
                 else:
-                    qpos = env.sim.data.qpos[:args.state_dim].copy()
+                    full_qpos = env.sim.data.qpos[:].copy()
+                    if len(full_qpos) >= actual_state_dim:
+                        qpos = full_qpos[:actual_state_dim]
+                    else:
+                        qpos = np.zeros(actual_state_dim)
+                        qpos[:len(full_qpos)] = full_qpos
             except:
-                qpos = np.zeros(args.state_dim)
+                qpos = np.zeros(actual_state_dim)
             state_tensor = torch.from_numpy(qpos).float().cuda().unsqueeze(0)
             
             # Run model inference
@@ -546,7 +599,8 @@ def main():
                 )
             
             # Extract first action from chunk and clip to valid range
-            action = action_chunk[0, 0, :].float().cpu().numpy()
+            # Use actual_action_dim to get the correct number of action dimensions
+            action = action_chunk[0, 0, :actual_action_dim].float().cpu().numpy()
             action = np.clip(action, -1.0, 1.0)
             
             # Execute action in environment
