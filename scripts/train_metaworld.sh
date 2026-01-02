@@ -31,7 +31,7 @@ else
 fi
 
 echo "Starting training with DeepSpeed..."
-"/kaggle/working/GRASP/myenv/bin/python deepspeed" --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" \
+deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" \
   --deepspeed "$PROJECT_ROOT/src/llava-pythia/scripts/zero3_offload.json" \
   --lora_enable True \
   --lora_module 'llm' \
