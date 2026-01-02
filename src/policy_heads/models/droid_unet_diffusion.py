@@ -234,6 +234,10 @@ class ConditionalUnet1D(nn.Module):
             Conv1dBlock(start_dim, start_dim, kernel_size=kernel_size),
             nn.Conv1d(start_dim, input_dim, 1),
         )
+        
+        # Zero-initialize the last layer for better stability
+        nn.init.zeros_(final_conv[-1].weight)
+        nn.init.zeros_(final_conv[-1].bias)
 
         self.diffusion_step_encoder = diffusion_step_encoder
         self.up_modules = up_modules
