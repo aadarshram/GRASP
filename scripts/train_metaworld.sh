@@ -55,7 +55,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --tf32 False \
   --output_dir $OUTPUT \
   --max_steps 4000 \
-  --per_device_train_batch_size 50 \
+  --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
   --save_steps 400 \
@@ -68,7 +68,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --max_grad_norm 1.0 \
   --model_max_length 2048 \
   --gradient_checkpointing True \
-  --dataloader_num_workers 4 \
+  --dataloader_num_workers 2 \
   --lazy_preprocess True \
   --action_head_type $ACTION_HEAD \
   --action_dim 4 \
