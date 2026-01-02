@@ -10,7 +10,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, GPTNeoXModel, GPTNeoX
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.utils import logging
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
-from policy_heads.models.droid_unet_diffusion import ConditionalUnet1D, SimpleDiffusionMLP
+from policy_heads.models import ConditionalUnet1D
 
 from policy_heads.models import build_ACT_head
 from ...llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
@@ -63,8 +63,7 @@ class LlavaPythiaForCausalLM(GPTNeoXPreTrainedModel, LlavaMetaForCausalLM):
                 steps_offset=0,
                 prediction_type='epsilon'
             )
-            # Replaced ConditionalUnet1D with SimpleDiffusionMLP for stability
-            self.embed_out = SimpleDiffusionMLP(
+            self.embed_out = ConditionalUnet1D(
                 input_dim=self.action_dim,
                 global_cond_dim=config.hidden_size,
                 state_dim=config.state_dim

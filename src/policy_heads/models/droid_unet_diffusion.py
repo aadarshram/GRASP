@@ -130,6 +130,10 @@ class ConditionalResidualBlock1D(nn.Module):
             nn.Linear(cond_dim, cond_channels),
             nn.Unflatten(-1, (-1, 1))
         )
+        
+        # Zero-initialize the conditioning projection for stability
+        nn.init.zeros_(self.cond_encoder[1].weight)
+        nn.init.zeros_(self.cond_encoder[1].bias)
 
         # ensure dimensions are compatible
         self.residual_conv = nn.Conv1d(in_channels, out_channels, 1) \
@@ -152,7 +156,9 @@ class ConditionalResidualBlock1D(nn.Module):
         embed = embed.reshape(embed.shape[0], 2, self.out_channels, 1)
         scale = embed[:, 0, ...]
         bias = embed[:, 1, ...]
-        out = scale * out + bias
+        
+        # Use (1 + scale) for stable residual modulation
+        out = (1 + scale) * out + bias
 
         out = self.blocks[1](out)
         out = out + self.residual_conv(x)
@@ -162,76 +168,7 @@ class ConditionalResidualBlock1D(nn.Module):
 class SimpleDiffusionMLP(nn.Module):
     def __init__(self, input_dim, global_cond_dim, diffusion_step_embed_dim=256, state_dim=7, hidden_dim=1024):
         super().__init__()
-        self.global_1d_pool = nn.AdaptiveAvgPool1d(1)
-        self.norm_after_pool = nn.LayerNorm(global_cond_dim)
-        self.combine = nn.Linear(global_cond_dim + state_dim, global_cond_dim)
-
-        dsed = diffusion_step_embed_dim
-        self.diffusion_step_encoder = nn.Sequential(
-            SinusoidalPosEmb(dsed, torch.float32),
-            nn.Linear(dsed, dsed * 4),
-            nn.Mish(),
-            nn.Linear(dsed * 4, dsed),
-        )
-        
-        cond_dim = dsed + global_cond_dim
-        
-        # Simple ResNet MLP structure
-        self.input_proj = nn.Linear(input_dim, hidden_dim)
-        self.cond_proj = nn.Linear(cond_dim, hidden_dim)
-        
-        self.blocks = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.LayerNorm(hidden_dim),
-                nn.Mish(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.LayerNorm(hidden_dim),
-                nn.Mish()
-            ) for _ in range(3)
-        ])
-        
-        self.final_proj = nn.Linear(hidden_dim, input_dim)
-        
-        # Zero init final layer
-        nn.init.zeros_(self.final_proj.weight)
-        nn.init.zeros_(self.final_proj.bias)
-
-    def forward(self, sample, timestep, global_cond=None, states=None):
-        # sample: (B, T, input_dim)
-        B, T, D = sample.shape
-        
-        # Process global condition
-        global_cond = self.global_1d_pool(global_cond.permute(0, 2, 1)).squeeze(-1)
-        global_cond = self.norm_after_pool(global_cond)
-        global_cond = torch.cat([global_cond, states], dim=-1) if states is not None else global_cond
-        global_cond = self.combine(global_cond) # (B, global_cond_dim)
-        
-        # Process timestep
-        timesteps = timestep
-        if not torch.is_tensor(timesteps):
-            timesteps = torch.tensor([timesteps], dtype=torch.long, device=sample.device)
-        elif torch.is_tensor(timesteps) and len(timesteps.shape) == 0:
-            timesteps = timesteps[None].to(sample.device)
-        timesteps = timesteps.expand(B)
-        
-        time_embed = self.diffusion_step_encoder(timesteps) # (B, dsed)
-        
-        # Combine conditions
-        cond = torch.cat([time_embed, global_cond], dim=-1) # (B, cond_dim)
-        cond_feat = self.cond_proj(cond).unsqueeze(1) # (B, 1, hidden_dim)
-        
-        # Process input
-        x = self.input_proj(sample) # (B, T, hidden_dim)
-        
-        # Apply blocks with residual connection and conditioning
-        for block in self.blocks:
-            x = x + cond_feat
-            x = x + block(x)
-            
-        x = self.final_proj(x) # (B, T, input_dim)
-        
-        return x
+        pass
 
 class ConditionalUnet1D(nn.Module):
     """
