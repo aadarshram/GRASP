@@ -50,7 +50,8 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --mm_use_im_patch_token False \
   --image_aspect_ratio pad \
   --group_by_modality_length False \
-  --bf16 True \
+  --bf16 False \
+  --fp16 True \
   --output_dir $OUTPUT \
   --max_steps 10 \
   --per_device_train_batch_size 1 \
@@ -63,7 +64,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --warmup_ratio 0.005 \
   --lr_scheduler_type "cosine" \
   --logging_steps 10 \
-  --tf32 True \
+  --tf32 False \
   --model_max_length 2048 \
   --gradient_checkpointing True \
   --dataloader_num_workers 8 \

@@ -51,8 +51,8 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --image_aspect_ratio pad \
   --group_by_modality_length False \
   --bf16 False \
-  --tf32 False \
   --fp16 True \
+  --tf32 False \
   --output_dir $OUTPUT \
   --max_steps 4000 \
   --per_device_train_batch_size 50 \
