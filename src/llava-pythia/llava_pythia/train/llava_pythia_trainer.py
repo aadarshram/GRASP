@@ -245,6 +245,13 @@ class LLaVAPythiaTrainer(Trainer):
         else:
             return super()._get_train_sampler()
 
+    def training_step(self, model, inputs):
+        loss = super().training_step(model, inputs)
+        if self.args.max_grad_norm is not None and self.args.max_grad_norm > 0:
+            # Force clipping using accelerator which handles DeepSpeed
+            self.accelerator.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
+        return loss
+
     def create_optimizer(self):
         """
         Setup the optimizer.

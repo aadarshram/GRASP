@@ -65,7 +65,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 1 \
-  --max_grad_norm 1.0 \
+  --max_grad_norm 0.5 \
   --model_max_length 2048 \
   --gradient_checkpointing True \
   --dataloader_num_workers 4 \
