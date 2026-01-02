@@ -51,7 +51,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --image_aspect_ratio pad \
   --group_by_modality_length False \
   --bf16 False \
-  --fp16 True \
+  --fp16 False \
   --tf32 False \
   --output_dir $OUTPUT \
   --max_steps 4000 \
@@ -60,9 +60,9 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --save_strategy "steps" \
   --save_steps 400 \
   --save_total_limit 3 \
-  --learning_rate 2e-4 \
+  --learning_rate 2e-5 \
   --weight_decay 0. \
-  --warmup_ratio 0.005 \
+  --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 1 \
   --model_max_length 2048 \
