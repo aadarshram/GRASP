@@ -59,12 +59,12 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --save_strategy "steps" \
   --save_steps 1000 \
   --save_total_limit 50 \
-  --learning_rate 1e-5 \
+  --learning_rate 2e-5 \
   --weight_decay 0. \
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 10 \
-  --max_grad_norm 0.5 \
+  --max_grad_norm 1.0 \
   --tf32 False \
   --model_max_length 2048 \
   --gradient_checkpointing True \

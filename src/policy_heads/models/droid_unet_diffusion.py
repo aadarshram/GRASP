@@ -79,23 +79,34 @@ class Upsample1d(nn.Module):
         return self.conv(x)
 
 
+class LayerNorm1d(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+    
+    def forward(self, x):
+        # x: (B, C, L)
+        x = x.transpose(1, 2) # (B, L, C)
+        x = self.norm(x)
+        x = x.transpose(1, 2) # (B, C, L)
+        return x
+
 class Conv1dBlock(nn.Module):
     """
-    A block consisting of Conv1d, GroupNorm, and Mish activation.
+    A block consisting of Conv1d, LayerNorm, and Mish activation.
 
     Args:
         inp_channels: Number of input channels.
         out_channels: Number of output channels.
         kernel_size: Size of the convolutional kernel.
-        n_groups: Number of groups for GroupNorm.
+        n_groups: Unused, kept for compatibility.
     """
     def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8):
         super().__init__()
 
         self.block = nn.Sequential(
             nn.Conv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2),
-            # Increased eps to 1e-3 for stability with diffusion noise
-            nn.GroupNorm(n_groups, out_channels, eps=1e-3),
+            LayerNorm1d(out_channels),
             nn.Mish(),
         )
 
@@ -131,10 +142,6 @@ class ConditionalResidualBlock1D(nn.Module):
             nn.Linear(cond_dim, cond_channels),
             nn.Unflatten(-1, (-1, 1))
         )
-        
-        # Zero-initialize the conditioning projection for stability
-        nn.init.zeros_(self.cond_encoder[1].weight)
-        nn.init.zeros_(self.cond_encoder[1].bias)
 
         # ensure dimensions are compatible
         self.residual_conv = nn.Conv1d(in_channels, out_channels, 1) \
@@ -158,8 +165,7 @@ class ConditionalResidualBlock1D(nn.Module):
         scale = embed[:, 0, ...]
         bias = embed[:, 1, ...]
         
-        # Use (1 + scale) for stable residual modulation
-        out = (1 + scale) * out + bias
+        out = scale * out + bias
 
         out = self.blocks[1](out)
         out = out + self.residual_conv(x)
