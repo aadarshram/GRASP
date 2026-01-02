@@ -17,7 +17,7 @@ TASK_CONFIGS = {
     },
     'metaworld_task': {
         'dataset_dir': [
-            "/kaggle/working/GRASP/data/metaworld_dataset",
+            "/kaggle/working/GRASP/data/metaworld_task",
         ],
         'episode_len': 500, # Matched to generation script
         'camera_names': ['front', 'top'],
