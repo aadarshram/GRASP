@@ -374,6 +374,10 @@ class LlavaPythiaForCausalLM(GPTNeoXPreTrainedModel, LlavaMetaForCausalLM):
 
             noise_pred = self.embed_out(noisy_actions, timesteps, global_cond=hidden_states, states=states)
             noise = noise.view(noise.size(0) * noise.size(1), *noise.size()[2:])
+            
+            # Clamp noise_pred to avoid extreme values
+            noise_pred = torch.clamp(noise_pred, min=-10.0, max=10.0)
+            
             loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
             loss = (loss * ~is_pad.unsqueeze(-1)).mean()
             return {'loss': loss}

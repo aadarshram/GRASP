@@ -39,7 +39,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --pretrain_image_size 320 \
   --lora_r 64 \
   --lora_alpha 256 \
-  --non_lora_lr 2e-6 \
+  --non_lora_lr 1e-6 \
   --task_name "metaworld_task" \
   --model_name_or_path "lesjie/Llava-Pythia-400M" \
   --version v0 \
@@ -60,7 +60,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --save_strategy "steps" \
   --save_steps 400 \
   --save_total_limit 3 \
-  --learning_rate 2e-6 \
+  --learning_rate 1e-6 \
   --weight_decay 0. \
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \

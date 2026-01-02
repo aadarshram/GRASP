@@ -206,6 +206,9 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
                 output.requires_grad_(True)
 
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+        
+        # Explicitly enable gradients for input embeddings to fix DeepSpeed warning
+        model.get_input_embeddings().weight.requires_grad_(True)
 
     # if training_args.lora_enable and (not training_args.load_pretrain):
     if training_args.lora_enable:
@@ -241,7 +244,8 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
             p.requires_grad = True
     # action head需要训练
     model.embed_out.requires_grad_(True)
-    model.proj_to_action.requires_grad_(True)
+    if hasattr(model, 'proj_to_action'):
+        model.proj_to_action.requires_grad_(True)
 
     if model_args.version in conversation_lib.conv_templates:
         conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]
