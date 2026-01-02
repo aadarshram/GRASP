@@ -79,34 +79,23 @@ class Upsample1d(nn.Module):
         return self.conv(x)
 
 
-class LayerNorm1d(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.norm = nn.LayerNorm(dim)
-    
-    def forward(self, x):
-        # x: (B, C, L)
-        x = x.transpose(1, 2) # (B, L, C)
-        x = self.norm(x)
-        x = x.transpose(1, 2) # (B, C, L)
-        return x
-
 class Conv1dBlock(nn.Module):
     """
-    A block consisting of Conv1d, LayerNorm, and Mish activation.
+    A block consisting of Conv1d, GroupNorm, and Mish activation.
 
     Args:
         inp_channels: Number of input channels.
         out_channels: Number of output channels.
         kernel_size: Size of the convolutional kernel.
-        n_groups: Unused, kept for compatibility.
+        n_groups: Number of groups for GroupNorm.
     """
     def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8):
         super().__init__()
 
         self.block = nn.Sequential(
             nn.Conv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2),
-            LayerNorm1d(out_channels),
+            # Increased eps to 1e-3 for stability with diffusion noise
+            nn.GroupNorm(n_groups, out_channels, eps=1e-3),
             nn.Mish(),
         )
 
