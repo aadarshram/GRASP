@@ -368,12 +368,22 @@ class LlavaPythiaForCausalLM(GPTNeoXPreTrainedModel, LlavaMetaForCausalLM):
             assert hidden_states.ndim == 3
 
             hidden_states = hidden_states.repeat(num_noise_samples, 1, 1)
+            
+            # Check for exploding hidden states
+            if hidden_states.abs().max() > 100.0:
+                 # Clamp hidden states to prevent explosion propagation
+                 hidden_states = torch.clamp(hidden_states, min=-100.0, max=100.0)
+
             timesteps = timesteps.repeat(num_noise_samples)
             is_pad = is_pad.repeat(num_noise_samples, 1)
             states = states.repeat(num_noise_samples,  1)
 
             noise_pred = self.embed_out(noisy_actions, timesteps, global_cond=hidden_states, states=states)
             noise = noise.view(noise.size(0) * noise.size(1), *noise.size()[2:])
+            
+            # Clamp noise_pred to avoid extreme values
+            noise_pred = torch.clamp(noise_pred, min=-10.0, max=10.0)
+            
             loss = torch.nn.functional.mse_loss(noise_pred, noise, reduction='none')
             loss = (loss * ~is_pad.unsqueeze(-1)).mean()
             return {'loss': loss}
