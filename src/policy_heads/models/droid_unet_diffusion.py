@@ -79,34 +79,22 @@ class Upsample1d(nn.Module):
         return self.conv(x)
 
 
-class LayerNorm1d(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.norm = nn.LayerNorm(dim)
-    
-    def forward(self, x):
-        # x: (B, C, L)
-        x = x.transpose(1, 2) # (B, L, C)
-        x = self.norm(x)
-        x = x.transpose(1, 2) # (B, C, L)
-        return x
-
 class Conv1dBlock(nn.Module):
     """
-    A block consisting of Conv1d, LayerNorm, and Mish activation.
+    A block consisting of Conv1d, GroupNorm, and Mish activation.
 
     Args:
         inp_channels: Number of input channels.
         out_channels: Number of output channels.
         kernel_size: Size of the convolutional kernel.
-        n_groups: Unused, kept for compatibility.
+        n_groups: Number of groups for GroupNorm.
     """
     def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8):
         super().__init__()
 
         self.block = nn.Sequential(
             nn.Conv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2),
-            LayerNorm1d(out_channels),
+            nn.GroupNorm(n_groups, out_channels),
             nn.Mish(),
         )
 
@@ -164,18 +152,12 @@ class ConditionalResidualBlock1D(nn.Module):
         embed = embed.reshape(embed.shape[0], 2, self.out_channels, 1)
         scale = embed[:, 0, ...]
         bias = embed[:, 1, ...]
-        
         out = scale * out + bias
 
         out = self.blocks[1](out)
         out = out + self.residual_conv(x)
         return out
 
-
-class SimpleDiffusionMLP(nn.Module):
-    def __init__(self, input_dim, global_cond_dim, diffusion_step_embed_dim=256, state_dim=7, hidden_dim=1024):
-        super().__init__()
-        pass
 
 class ConditionalUnet1D(nn.Module):
     """
@@ -202,7 +184,7 @@ class ConditionalUnet1D(nn.Module):
 
         dsed = diffusion_step_embed_dim
         diffusion_step_encoder = nn.Sequential(
-            SinusoidalPosEmb(dsed, torch.float32),
+            SinusoidalPosEmb(dsed, torch.bfloat16),
             nn.Linear(dsed, dsed * 4),
             nn.Mish(),
             nn.Linear(dsed * 4, dsed),
@@ -252,10 +234,6 @@ class ConditionalUnet1D(nn.Module):
             Conv1dBlock(start_dim, start_dim, kernel_size=kernel_size),
             nn.Conv1d(start_dim, input_dim, 1),
         )
-        
-        # Zero-initialize the last layer for better stability
-        nn.init.zeros_(final_conv[-1].weight)
-        nn.init.zeros_(final_conv[-1].bias)
 
         self.diffusion_step_encoder = diffusion_step_encoder
         self.up_modules = up_modules
