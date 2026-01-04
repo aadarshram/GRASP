@@ -15,20 +15,9 @@ TASK_CONFIGS = {
         'train_ratio': 0.95,  # 95% train, 5% validation
         'name_filter': lambda n: True  # Filter function for dataset files
     },
-    'vla_diff_head_lora': {
-        'dataset_dir': [
-            "/home/nightfury/Desktop/GRASP/data/my_task",  # Dummy dataset for testing
-        ],
-        'episode_len': 1000,
-        'camera_names': ['left', 'right', 'top'],  # Matches the dummy dataset cameras
-        'stats_dir': None,  # Optional: use different dir for normalization stats
-        'sample_weights': None,  # Optional: weights for sampling different datasets
-        'train_ratio': 0.95,  # 95% train, 5% validation
-        'name_filter': lambda n: n.endswith('.hdf5')  # Only load .hdf5 files
-    },
     'metaworld_task': {
         'dataset_dir': [
-            "/home/nightfury/Desktop/GRASP/data/metaworld_dataset",
+            "/kaggle/working/GRASP/data/metaworld_task",
         ],
         'episode_len': 500, # Matched to generation script
         'camera_names': ['front', 'top'],

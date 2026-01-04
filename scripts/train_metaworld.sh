@@ -31,7 +31,7 @@ else
 fi
 
 echo "Starting training with DeepSpeed..."
-"$PROJECT_ROOT/.venv/bin/deepspeed" --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" \
+deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" \
   --deepspeed "$PROJECT_ROOT/src/llava-pythia/scripts/zero3_offload.json" \
   --lora_enable True \
   --lora_module 'llm' \
@@ -39,7 +39,7 @@ echo "Starting training with DeepSpeed..."
   --pretrain_image_size 320 \
   --lora_r 64 \
   --lora_alpha 256 \
-  --non_lora_lr 2e-5 \
+  --non_lora_lr 1e-5 \
   --task_name "metaworld_task" \
   --model_name_or_path "lesjie/Llava-Pythia-400M" \
   --version v0 \
@@ -50,23 +50,25 @@ echo "Starting training with DeepSpeed..."
   --mm_use_im_patch_token False \
   --image_aspect_ratio pad \
   --group_by_modality_length False \
-  --bf16 True \
+  --bf16 False \
+  --fp16 False \
+  --tf32 False \
   --output_dir $OUTPUT \
   --max_steps 4000 \
-  --per_device_train_batch_size 50 \
+  --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 1 \
   --save_strategy "steps" \
   --save_steps 400 \
   --save_total_limit 3 \
-  --learning_rate 2e-4 \
+  --learning_rate 2e-5 \
   --weight_decay 0. \
-  --warmup_ratio 0.005 \
+  --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 1 \
-  --tf32 True \
+  --max_grad_norm 1.0 \
   --model_max_length 2048 \
   --gradient_checkpointing True \
-  --dataloader_num_workers 4 \
+  --dataloader_num_workers 2 \
   --lazy_preprocess True \
   --action_head_type $ACTION_HEAD \
   --action_dim 4 \
