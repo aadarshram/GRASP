@@ -27,18 +27,27 @@ from llava_pythia.mm_utils import tokenizer_image_token
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt_path", type=str, required=True, help="Path to trained checkpoint (output_dir)")
+    parser.add_argument("--ckpt_path", type=str, default=None, help="Path to trained checkpoint (output_dir)")
+    parser.add_argument("--hf_model", type=str, default=None, help="HuggingFace model ID for diffusion head (e.g., hz1919810/TinyVLA-droid_diffusion_metaworld)")
+    parser.add_argument("--hf_head_file", type=str, default="diff_head_ft.pth", help="Diffusion head checkpoint filename in HF repo")
     parser.add_argument("--base_model", type=str, default="lesjie/Llava-Pythia-400M")
     parser.add_argument("--env_name", type=str, default="pick-place-v3")
     parser.add_argument("--num_episodes", type=int, default=5)
     parser.add_argument("--action_dim", type=int, default=4)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.ckpt_path and not args.hf_model:
+        parser.error("Either --ckpt_path or --hf_model must be provided")
+    return args
 
 def main():
     args = get_args()
     
     # 1. Load Config & Model
-    print(f"Loading model from {args.ckpt_path}...")
+    if args.hf_model:
+        print(f"Loading VLM from {args.base_model}...")
+        print(f"Will load diffusion head from HuggingFace: {args.hf_model}/{args.hf_head_file}")
+    else:
+        print(f"Loading model from {args.ckpt_path}...")
     
     # Mock config dictionaries expected by load_llava_pythia
     # We need to reconstruct the training config structure
@@ -67,7 +76,7 @@ def main():
         lora_module="llm",
         lora_task_type="CAUSAL_LM",
         bits=16, # Assume bf16/fp16
-        bf16=True,
+        bf16=False,
         fp16=False,
         device="cuda",
         gradient_checkpointing=False,
@@ -98,19 +107,32 @@ def main():
     
     # Let's try the standard path: Load base model, then load adapter.
     
+    # Determine base model name
+    # For HF models, always use args.base_model (lesjie/Llava-Pythia-400M)
+    # For local checkpoints, use args.base_model
+    base_model_name = args.base_model
+    
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        args.base_model,
+        base_model_name,
         padding_side="right",
         model_max_length=2048
     )
     tokenizer.pad_token_id = 1 # As per training log
 
-    llava_pythia_config = LlavaPythiaConfig.from_pretrained(args.base_model, trust_remote_code=True)
+    llava_pythia_config = LlavaPythiaConfig.from_pretrained(base_model_name, trust_remote_code=True)
     llava_pythia_config.action_head_type = 'droid_diffusion'
     llava_pythia_config.action_dim = args.action_dim
     llava_pythia_config.state_dim = 7
     llava_pythia_config.chunk_size = 16 # Default in train.py
     llava_pythia_config.concat = "token_cat"
+
+    # Update model_args to use the correct base model
+    model_args.model_name_or_path = base_model_name
+
+    # For HF models (diffusion head only), disable LoRA
+    # For local checkpoints, enable LoRA
+    use_lora = args.ckpt_path is not None
+    training_args.lora_enable = use_lora
 
     # Load Base Model + LoRA init (randomly initialized LoRA layers)
     config = {
@@ -122,60 +144,126 @@ def main():
     
     model, _ = load_llava_pythia(config=config, llava_pythia_config=llava_pythia_config, tokenizer=tokenizer)
     
-    # Now load the trained LoRA weights from ckpt_path
-    from peft import PeftModel
-    print(f"Loading LoRA weights from {args.ckpt_path}...")
-    # The model returned by load_llava_pythia is already a PeftModel (if lora_enable=True)
-    # We need to load the state dict from the checkpoint and load it into the model.
-    # OR: simpler approach for inference: Use PeftModel.from_pretrained directly on the base model.
-    # But load_llava_pythia handles a lot of complexity (vision tower, etc).
-    
-    # The 'load_llava_pythia' returns a model where 'model.get_model()' is the base.
-    # But wait, if training_args.lora_enable is True, it returns a PeftModel wrapping the base.
-    # We can try to load_adapter.
-    
-    # Actually, let's look at how we saved it. 
-    # train.py saves with: model.save_pretrained(input_dir) -> saves adapter_model.bin and config.json
-    # AND it saves non_lora_trainables.bin (projector, head).
-    
-    # So we need to:
-    # 1. Load non-LoRA trainables (projector, action head).
-    # 2. Load the LoRA adapter.
-    
-    # Load non-LoRA weights
-    non_lora_path = os.path.join(args.ckpt_path, "non_lora_trainables.bin")
-    if not os.path.exists(non_lora_path):
-        # Check parent directory (common output_dir pattern)
-        parent_dir = os.path.dirname(args.ckpt_path.rstrip('/'))
-        non_lora_path = os.path.join(parent_dir, "non_lora_trainables.bin")
-
-    if os.path.exists(non_lora_path):
-        print(f"Loading non-LoRA weights from {non_lora_path}...")
-        non_lora_state_dict = torch.load(non_lora_path)
-        # We need to handle keys potentially prefixed with 'base_model.model.' if they were saved wrapped
-        # But usually 'non_lora_trainables' are saved directly.
+    # Load weights based on source
+    if args.hf_model:
+        # HF model contains only the diffusion head checkpoint
+        from huggingface_hub import hf_hub_download
+        print(f"Downloading diffusion head from HuggingFace: {args.hf_model}/{args.hf_head_file}...")
         
-        # Check keys
-        new_state_dict = {}
-        for k, v in non_lora_state_dict.items():
-            # Remove 'base_model.model.' if present (standard PEFT artifact)
-            k = k.replace('base_model.model.', '')
-            new_state_dict[k] = v
+        try:
+            head_path = hf_hub_download(repo_id=args.hf_model, filename=args.hf_head_file)
+            print(f"Loading diffusion head from {head_path}")
             
-        model.load_state_dict(new_state_dict, strict=False)
+            # Load the diffusion head state dict
+            head_state_dict = torch.load(head_path, map_location='cpu')
+            
+            # The checkpoint contains diffusion head and mm_projector weights
+            # Filter for action_head and mm_projector keys
+            weights_to_load = {}
+            for k, v in head_state_dict.items():
+                # Remove potential prefixes
+                k_clean = k.replace('module.', '').replace('base_model.model.', '')
+                # Load both action_head (diffusion head) and mm_projector
+                if 'action_head' in k_clean or 'mm_projector' in k_clean or 'embed_out' in k_clean:
+                    # Keep as float32
+                    weights_to_load[k_clean] = v.float()
+            
+            if not weights_to_load:
+                # If no expected keys, assume entire dict contains the weights
+                print("No 'action_head' or 'mm_projector' found, loading entire checkpoint")
+                weights_to_load = {}
+                for k, v in head_state_dict.items():
+                    k_clean = k.replace('module.', '').replace('base_model.model.', '')
+                    # Try to infer the structure - if it has model weights, prepend action_head
+                    if not k_clean.startswith(('action_head', 'mm_projector', 'embed_out', 'gpt_neox')):
+                        # Likely diffusion head weights without prefix
+                        # Keep as float32
+                        weights_to_load[f'action_head.{k_clean}'] = v.float()
+                    else:
+                        weights_to_load[k_clean] = v.float()
+            
+            # Load into model
+            missing, unexpected = model.load_state_dict(weights_to_load, strict=False)
+            print(f"Loaded weights. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
+            print(f"Loaded components: {set([k.split('.')[0] for k in weights_to_load.keys()])}")
+            if len(unexpected) > 0:
+                print(f"Unexpected keys: {unexpected[:5]}...")  # Show first 5
+            
+        except Exception as e:
+            print(f"Error loading diffusion head from HuggingFace: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     else:
-        print("Warning: non_lora_trainables.bin not found! Model might be untrained.")
+        # Local checkpoint - load LoRA and non-LoRA weights
+        if args.ckpt_path:
+            ckpt_path_abs = os.path.abspath(args.ckpt_path)
+            print(f"Loading from local checkpoint: {ckpt_path_abs}...")
+            
+            # Load non-LoRA weights (projector, action head)
+            non_lora_path = os.path.join(ckpt_path_abs, "non_lora_trainables.bin")
+            if not os.path.exists(non_lora_path):
+                # Check parent directory (common output_dir pattern)
+                parent_dir = os.path.dirname(ckpt_path_abs.rstrip('/'))
+                non_lora_path = os.path.join(parent_dir, "non_lora_trainables.bin")
 
-    # Load LoRA weights
-    # Since model is already a PeftModel (initialized in load_llava_pythia), we can load parameters.
-    # Or cleaner: load params.
-    model.load_adapter(args.ckpt_path, adapter_name="default")
+            if os.path.exists(non_lora_path):
+                print(f"Loading non-LoRA weights from {non_lora_path}...")
+                non_lora_state_dict = torch.load(non_lora_path, map_location='cpu')
+                
+                # Handle keys potentially prefixed with 'base_model.model.'
+                new_state_dict = {}
+                for k, v in non_lora_state_dict.items():
+                    # Remove 'base_model.model.' if present (standard PEFT artifact)
+                    k = k.replace('base_model.model.', '')
+                    new_state_dict[k] = v
+                    
+                model.load_state_dict(new_state_dict, strict=False)
+            else:
+                print("Warning: non_lora_trainables.bin not found! Model might be untrained.")
+
+            # Load LoRA weights (only for local checkpoints with LoRA)
+            if use_lora:
+                adapter_config_path = os.path.join(ckpt_path_abs, "adapter_config.json")
+                adapter_weights_path = os.path.join(ckpt_path_abs, "adapter_model.bin")
+                
+                # Try safetensors first, then bin
+                if not os.path.exists(adapter_weights_path):
+                    adapter_weights_path = os.path.join(ckpt_path_abs, "adapter_model.safetensors")
+                
+                if os.path.exists(adapter_config_path) and os.path.exists(adapter_weights_path):
+                    print(f"Loading LoRA adapter from {ckpt_path_abs}...")
+                    
+                    try:
+                        if adapter_weights_path.endswith('.safetensors'):
+                            from safetensors.torch import load_file as load_safetensors
+                            adapter_state_dict = load_safetensors(adapter_weights_path)
+                        else:
+                            adapter_state_dict = torch.load(adapter_weights_path, map_location='cpu')
+                        
+                        # Clean up keys
+                        lora_state_dict = {}
+                        for k, v in adapter_state_dict.items():
+                            k_clean = k.replace('base_model.model.', '')
+                            lora_state_dict[k_clean] = v
+                        
+                        missing, unexpected = model.load_state_dict(lora_state_dict, strict=False)
+                        print(f"Loaded LoRA adapter. Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
+                    except Exception as e:
+                        print(f"Error loading LoRA adapter: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"Warning: LoRA adapter files not found in {ckpt_path_abs}")
+                    print(f"  - adapter_config.json exists: {os.path.exists(adapter_config_path)}")
+                    print(f"  - adapter_model.bin exists: {os.path.exists(os.path.join(ckpt_path_abs, 'adapter_model.bin'))}")
+                    print(f"  - adapter_model.safetensors exists: {os.path.exists(os.path.join(ckpt_path_abs, 'adapter_model.safetensors'))}")
     
     model.cuda()
     model.eval()
     
     # Image Processor
-    image_processor = CLIPImageProcessor.from_pretrained(args.base_model)
+    image_processor = CLIPImageProcessor.from_pretrained(base_model_name)
     crop_size = image_processor.crop_size
     
     # 2. Setup Environment
@@ -183,6 +271,32 @@ def main():
     ml1 = metaworld.ML1(args.env_name)
     env = ml1.train_classes[args.env_name](render_mode='rgb_array')
     env.set_task(ml1.train_tasks[0])
+    
+    # Helper function to render from a specific camera (matches training code exactly)
+    def render_from_camera(camera_id, image_size=(480, 640)):
+        """Render from a specific camera ID."""
+        # Store original camera_id
+        original_camera_id = env.mujoco_renderer.camera_id
+        try:
+            # Set camera for this render
+            env.mujoco_renderer.camera_id = camera_id
+            img = env.render()
+            
+            # Resize if needed
+            if img.shape[0] != image_size[0] or img.shape[1] != image_size[1]:
+                img = cv2.resize(img, (image_size[1], image_size[0]))
+            return img
+        except Exception as e:
+            # If camera doesn't exist, fall back to default camera
+            print(f"Warning: Could not render from camera {camera_id}, using default. Error: {e}")
+            env.mujoco_renderer.camera_id = original_camera_id
+            img = env.render()
+            if img.shape[0] != image_size[0] or img.shape[1] != image_size[1]:
+                img = cv2.resize(img, (image_size[1], image_size[0]))
+            return img
+        finally:
+            # Restore original camera
+            env.mujoco_renderer.camera_id = original_camera_id
     
     successes = 0
     frames = []
@@ -204,22 +318,36 @@ def main():
         done = False
         
         while not done and step < 500:
-            # Capture Images
-            img = env.render()
-            img = cv2.resize(img, (320, 180)) # Match training aspect ratio/size? 
+            # Render from three different camera views (matching training code exactly)
+            # Camera IDs: 1 (left), 2 (right), 0 (top)
+            img_left = render_from_camera(1, image_size=(180, 320))
+            img_left = cv2.rotate(img_left, cv2.ROTATE_180)
             
-            # Save frame for video
+            img_right = render_from_camera(2, image_size=(180, 320))
+            img_right = cv2.rotate(img_right, cv2.ROTATE_180)
+            
+            img_top = render_from_camera(0, image_size=(180, 320))
+            # No rotation for top view
+            
+            # Stack images horizontally for video
+            img_combined = np.hstack([img_left, img_top, img_right])
             # Convert RGB to BGR for OpenCV
-            episode_frames.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            episode_frames.append(cv2.cvtColor(img_combined, cv2.COLOR_RGB2BGR))
 
-            img_pil = Image.fromarray(img)
-            # Preprocess image
-            image_tensor = image_processor.preprocess(img_pil, return_tensors='pt')['pixel_values'][0]
+            # Prepare images for model inference
+            img_pil_left = Image.fromarray(img_left)
+            image_tensor_left = image_processor.preprocess(img_pil_left, return_tensors='pt')['pixel_values'][0]
             
-            # Stack images (left, right, top) - we just duplicate for now as per generator
-            images = image_tensor.unsqueeze(0).cuda().to(torch.bfloat16)
-            images_r = image_tensor.unsqueeze(0).cuda().to(torch.bfloat16)
-            images_top = image_tensor.unsqueeze(0).cuda().to(torch.bfloat16)
+            img_pil_right = Image.fromarray(img_right)
+            image_tensor_right = image_processor.preprocess(img_pil_right, return_tensors='pt')['pixel_values'][0]
+            
+            img_pil_top = Image.fromarray(img_top)
+            image_tensor_top = image_processor.preprocess(img_pil_top, return_tensors='pt')['pixel_values'][0]
+            
+            # Stack images for model (left, right, top) matching training data format
+            images = image_tensor_left.unsqueeze(0).cuda().float()
+            images_r = image_tensor_right.unsqueeze(0).cuda().float()
+            images_top = image_tensor_top.unsqueeze(0).cuda().float()
             
             # Text Prompt
             prompt = f"interactions with {args.env_name}\n"
@@ -235,7 +363,7 @@ def main():
                 qpos = env.sim.data.qpos.flat[:].copy()[:7] # first 7 are robot
             except:
                 qpos = np.zeros(7)
-            state_tensor = torch.from_numpy(qpos).float().cuda().unsqueeze(0).to(torch.bfloat16)
+            state_tensor = torch.from_numpy(qpos).float().cuda().unsqueeze(0)
             
             # Inference
             with torch.no_grad():
@@ -275,7 +403,7 @@ def main():
 
         # Save Video for this episode
         if episode_frames:
-            video_path = f"eval_metaworld_ep{ep}.mp4"
+            video_path = f"outputs/eval/eval_metaworld_ep{ep}_all_3_views.mp4"
             height, width, _ = episode_frames[0].shape
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(video_path, fourcc, 30.0, (width, height))
