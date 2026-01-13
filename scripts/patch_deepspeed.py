@@ -4,7 +4,7 @@ import sys
 
 def patch_deepspeed():
     # Path constructed relative to user specific venv structure knowing the path from previous tools
-    target_file = "/home/nightfury/Desktop/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/zero/linear.py"
+    target_file = "/home/hemanthm/Desktop/GRASP/GRASP/.venv/lib/python3.13/site-packages/deepspeed/runtime/zero/linear.py"
     
     if not os.path.exists(target_file):
         print(f"File not found: {target_file}")

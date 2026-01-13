@@ -14,11 +14,26 @@ import numpy as np
 import argparse
 from pathlib import Path
 import sys
+import os
+
+# Add scripts directory to path for camera_config import
+scripts_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, scripts_dir)
+from camera_config import get_camera_names, METAWORLD_CAMERAS
 
 
 def validate_hdf5_file(filepath, verbose=False):
     """
     Validate that an HDF5 file has the required structure for VLA training.
+    
+    This validates the structure required by train.py, including:
+    - Action sequences (action vectors for all timesteps)
+    - Robot state (qpos and qvel for proprioception)
+    - Multi-camera images (at least one camera required)
+    - Language instructions (task description)
+    - Dataset metadata (sim attribute)
+    
+    Selected cameras from camera_config.py are validated.
     
     Args:
         filepath: Path to HDF5 file
@@ -27,8 +42,13 @@ def validate_hdf5_file(filepath, verbose=False):
     Returns:
         (is_valid, info_dict, errors_list)
     """
+    # Core required datasets for train.py
     required_keys = ['/action', '/observations/qpos', '/observations/qvel', '/language_raw']
-    camera_keys = ['/observations/images/left', '/observations/images/right', '/observations/images/top']
+    
+    # Get selected cameras from camera_config
+    selected_cameras = get_camera_names()
+    # All available cameras for reference
+    all_possible_cameras = list(METAWORLD_CAMERAS.keys())
     
     errors = []
     info = {}
@@ -40,68 +60,118 @@ def validate_hdf5_file(filepath, verbose=False):
                 if key not in f:
                     errors.append(f"Missing required dataset: {key}")
             
-            # Check cameras
-            for key in camera_keys:
-                if key not in f:
-                    errors.append(f"Missing camera: {key}")
+            # Check that selected cameras exist
+            available_cameras = []
+            missing_cameras = []
+            for cam in selected_cameras:
+                if f'/observations/images/{cam}' in f:
+                    available_cameras.append(cam)
+                else:
+                    missing_cameras.append(cam)
             
+            if missing_cameras:
+                errors.append(f"Missing selected cameras: {missing_cameras}. Available cameras must match camera_config.py: {selected_cameras}")
+            
+            if not available_cameras:
+                errors.append(f"No camera images found. Expected: {selected_cameras}")
+            
+            # If critical errors found, return early
             if errors:
                 return False, info, errors
             
             # Get dimensions
             T = f['/action'].shape[0]
-            action_dim = f['/action'].shape[1]
-            state_dim = f['/observations/qpos'].shape[1]
+            action_dim = f['/action'].shape[1] if len(f['/action'].shape) > 1 else 1
+            state_dim = f['/observations/qpos'].shape[1] if len(f['/observations/qpos'].shape) > 1 else 1
             
-            # Check shape consistency
-            if f['/observations/qpos'].shape[0] != T:
-                errors.append(f"qpos length ({f['/observations/qpos'].shape[0]}) != action length ({T})")
+            # Validate action dataset
+            if f['/action'].dtype != np.float32:
+                errors.append(f"Action dtype is {f['/action'].dtype}, expected float32")
             
-            if f['/observations/qvel'].shape[0] != T:
-                errors.append(f"qvel length ({f['/observations/qvel'].shape[0]}) != action length ({T})")
+            # Check shape consistency for robot state
+            qpos_shape = f['/observations/qpos'].shape
+            qvel_shape = f['/observations/qvel'].shape
             
-            # Check image shapes
-            is_compressed = f.attrs.get('compress', False)
-            for cam in ['left', 'right', 'top']:
-                img_data = f[f'/observations/images/{cam}']
-                if not is_compressed:
-                    if len(img_data.shape) != 4:
-                        errors.append(f"{cam} images have wrong shape: {img_data.shape}, expected (T, H, W, 3)")
-                    elif img_data.shape[0] != T:
-                        errors.append(f"{cam} image count ({img_data.shape[0]}) != action length ({T})")
-                    elif img_data.shape[3] != 3:
-                        errors.append(f"{cam} images not RGB: shape[-1]={img_data.shape[3]}, expected 3")
+            if qpos_shape[0] != T:
+                errors.append(f"qpos length ({qpos_shape[0]}) != action length ({T})")
+            
+            if qvel_shape[0] != T:
+                errors.append(f"qvel length ({qvel_shape[0]}) != action length ({T})")
+            
+            if f['/observations/qpos'].dtype != np.float32:
+                errors.append(f"qpos dtype is {f['/observations/qpos'].dtype}, expected float32")
+            
+            if f['/observations/qvel'].dtype != np.float32:
+                errors.append(f"qvel dtype is {f['/observations/qvel'].dtype}, expected float32")
+            
+            # Check image data for all available cameras
+            for cam in available_cameras:
+                img_dataset = f[f'/observations/images/{cam}']
+                
+                # Determine if images are compressed based on shape
+                # Compressed (gzip) images: shape is (T,) or (T, bytes)
+                # Raw images: shape is (T, H, W, 3)
+                
+                # For gzip compressed images in HDF5, the dataset has shape like (T,)
+                if len(img_dataset.shape) == 1:
+                    if img_dataset.shape[0] != T:
+                        errors.append(f"{cam} compressed image count ({img_dataset.shape[0]}) != action length ({T})")
+                # For uncompressed raw images, shape should be (T, H, W, 3)
+                elif len(img_dataset.shape) == 4:
+                    if img_dataset.shape[0] != T:
+                        errors.append(f"{cam} image count ({img_dataset.shape[0]}) != action length ({T})")
+                    if img_dataset.shape[3] != 3:
+                        errors.append(f"{cam} images not RGB: shape[-1]={img_dataset.shape[3]}, expected 3")
+                    if img_dataset.dtype != np.uint8:
+                        errors.append(f"{cam} image dtype is {img_dataset.dtype}, expected uint8")
                 else:
-                    # Compressed images
-                    if len(img_data) != T:
-                        errors.append(f"{cam} compressed image count ({len(img_data)}) != action length ({T})")
+                    errors.append(f"{cam} images have unexpected shape: {img_dataset.shape}")
             
-            # Check language
+            # Check language instruction
             try:
-                language = f['/language_raw'][0].decode('utf-8')
-                if not language or len(language) == 0:
-                    errors.append("Language instruction is empty")
+                if '/language_raw' not in f:
+                    errors.append("Missing language_raw dataset")
+                else:
+                    language_data = f['/language_raw']
+                    if len(language_data) == 0:
+                        errors.append("Language instruction is empty")
+                    else:
+                        language_raw = language_data[0]
+                        # Language data could be bytes or numpy string
+                        if isinstance(language_raw, bytes):
+                            language = language_raw.decode('utf-8')
+                        elif isinstance(language_raw, np.bytes_):
+                            language = language_raw.decode('utf-8')
+                        else:
+                            language = str(language_raw)
+                        
+                        if not language or len(language) == 0:
+                            errors.append("Language instruction string is empty")
             except Exception as e:
                 errors.append(f"Cannot decode language: {e}")
             
-            # Check attributes
+            # Check required attributes
             if 'sim' not in f.attrs:
-                errors.append("Missing 'sim' attribute")
+                errors.append("Missing 'sim' attribute (should indicate whether data is from simulator)")
             
             # Collect info
             info = {
                 'timesteps': T,
                 'action_dim': action_dim,
                 'state_dim': state_dim,
-                'language': f['/language_raw'][0].decode('utf-8') if '/language_raw' in f else 'N/A',
+                'cameras': available_cameras,
+                'language': language if len(available_cameras) > 0 else 'N/A',
                 'is_sim': f.attrs.get('sim', 'N/A'),
-                'compressed': is_compressed,
                 'file_size_mb': filepath.stat().st_size / (1024 * 1024)
             }
             
-            if not is_compressed and '/observations/images/left' in f:
-                img_shape = f['/observations/images/left'].shape
-                info['image_shape'] = f"{img_shape[1]}x{img_shape[2]}"
+            # Get image resolution if available
+            first_cam = available_cameras[0]
+            img_data = f[f'/observations/images/{first_cam}']
+            if len(img_data.shape) == 4:
+                info['image_shape'] = f"{img_data.shape[1]}x{img_data.shape[2]}"
+            else:
+                info['image_shape'] = "compressed (gzip)"
             
             return len(errors) == 0, info, errors
             
@@ -170,9 +240,10 @@ def main():
                 print_colored(f"  ✓ Valid", 'green')
                 print(f"    Timesteps: {info['timesteps']}")
                 print(f"    Action dim: {info['action_dim']}, State dim: {info['state_dim']}")
+                print(f"    Cameras: {', '.join(info['cameras'])}")
                 print(f"    Image shape: {info.get('image_shape', 'N/A')}")
                 print(f"    Language: {info['language'][:50]}...")
-                print(f"    Compressed: {info['compressed']}")
+                print(f"    Is sim: {info['is_sim']}")
                 print(f"    File size: {info['file_size_mb']:.2f} MB")
                 print()
             else:

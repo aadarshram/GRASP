@@ -3,13 +3,21 @@
 
 # DATA_DIR = '/path/to/your/data_dir'
 
+# Import selected cameras from camera_config
+import sys
+import os
+scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, scripts_dir)
+from camera_config import get_camera_names
+
 TASK_CONFIGS = {
     'example_task_config': {
         'dataset_dir': [
             "/data/my_task",  # TODO: Update this path to your HDF5 files
         ],
         'episode_len': 1000,
-        'camera_names': ['left', 'right', 'top'],  # TODO: Match your actual camera names in HDF5
+        # Uses camera names from camera_config
+        'camera_names': get_camera_names(),  
         'stats_dir': None,  # Optional: use different dir for normalization stats
         'sample_weights': None,  # Optional: weights for sampling different datasets
         'train_ratio': 0.95,  # 95% train, 5% validation
@@ -17,10 +25,11 @@ TASK_CONFIGS = {
     },
     'vla_diff_head_lora': {
         'dataset_dir': [
-            "/home/nightfury/Desktop/GRASP/data/my_task",  # Dummy dataset for testing
+            "/home/hemanthm/Desktop/GRASP/GRASP/data/metaworld_task",  # Dummy dataset for testing
         ],
         'episode_len': 1000,
-        'camera_names': ['left', 'right', 'top'],  # Matches the dummy dataset cameras
+        # Uses camera names from camera_config
+        'camera_names': get_camera_names(),
         'stats_dir': None,  # Optional: use different dir for normalization stats
         'sample_weights': None,  # Optional: weights for sampling different datasets
         'train_ratio': 0.95,  # 95% train, 5% validation
@@ -28,10 +37,11 @@ TASK_CONFIGS = {
     },
     'metaworld_task': {
         'dataset_dir': [
-            "/home/nightfury/Desktop/GRASP/data/metaworld_dataset",
+            "/home/hemanthm/Desktop/GRASP/GRASP/data/metaworld_dataset",
         ],
         'episode_len': 500, # Matched to generation script
-        'camera_names': ['front', 'top'],
+        # Uses camera names from camera_config - will include only selected cameras
+        'camera_names': get_camera_names(),
         'stats_dir': None,
         'sample_weights': None,
         'train_ratio': 0.95,

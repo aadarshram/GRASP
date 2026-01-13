@@ -8,7 +8,7 @@ _wandb:
                 args:
                     - --local_rank=0
                     - --deepspeed
-                    - /home/nightfury/Desktop/GRASP/src/llava-pythia/scripts/zero3_offload.json
+                    - /home/hemanthm/Desktop/GRASP/GRASP/src/llava-pythia/scripts/zero3_offload.json
                     - --lora_enable
                     - "True"
                     - --lora_module
@@ -109,7 +109,7 @@ _wandb:
                         total: "182433132544"
                         used: "132620292096"
                 email: sachinsundar2007@gmail.com
-                executable: /home/nightfury/Desktop/GRASP/.venv/bin/python3
+                executable: /home/hemanthm/Desktop/GRASP/GRASP/.venv/bin/python3
                 git:
                     commit: 36ed08602df163cc4881300920264d2a2d77a1c6
                     remote: https://github.com/aadarshram/GRASP.git
@@ -125,9 +125,9 @@ _wandb:
                 memory:
                     total: "16454639616"
                 os: Linux-6.14.0-37-generic-x86_64-with-glibc2.39
-                program: /home/nightfury/Desktop/GRASP/scripts/train.py
+                program: /home/hemanthm/Desktop/GRASP/GRASP/scripts/train.py
                 python: CPython 3.13.5
-                root: /home/nightfury/Desktop/GRASP
+                root: /home/hemanthm/Desktop/GRASP/GRASP
                 startedAt: "2025-12-22T18:10:11.771287Z"
                 writerId: dmpnkji7rasb0vxpb99ln68bvgqfk8ek
         m:
@@ -263,7 +263,7 @@ debug:
 decoder_start_token_id:
     value: null
 deepspeed:
-    value: /home/nightfury/Desktop/GRASP/src/llava-pythia/scripts/zero3_offload.json
+    value: /home/hemanthm/Desktop/GRASP/GRASP/src/llava-pythia/scripts/zero3_offload.json
 disable_tqdm:
     value: false
 diversity_penalty:

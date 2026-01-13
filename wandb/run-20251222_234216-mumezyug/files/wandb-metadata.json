@@ -5,7 +5,7 @@
   "args":  [
     "--local_rank=0",
     "--deepspeed",
-    "/home/nightfury/Desktop/GRASP/src/llava-pythia/scripts/zero3_offload.json",
+    "/home/hemanthm/Desktop/GRASP/GRASP/src/llava-pythia/scripts/zero3_offload.json",
     "--lora_enable",
     "True",
     "--lora_module",
@@ -97,7 +97,7 @@
     "--resume_from_checkpoint",
     "outputs/metaworld_train/checkpoint-201"
   ],
-  "program":  "/home/nightfury/Desktop/GRASP/scripts/train.py",
+  "program":  "/home/hemanthm/Desktop/GRASP/GRASP/scripts/train.py",
   "codePath":  "scripts/train.py",
   "codePathLocal":  "scripts/train.py",
   "git":  {
@@ -105,9 +105,9 @@
     "commit":  "36ed08602df163cc4881300920264d2a2d77a1c6"
   },
   "email":  "sachinsundar2007@gmail.com",
-  "root":  "/home/nightfury/Desktop/GRASP",
+  "root":  "/home/hemanthm/Desktop/GRASP/GRASP",
   "host":  "nightfury-Legion-7-16IRX9",
-  "executable":  "/home/nightfury/Desktop/GRASP/.venv/bin/python3",
+  "executable":  "/home/hemanthm/Desktop/GRASP/GRASP/.venv/bin/python3",
   "cpu_count":  24,
   "cpu_count_logical":  32,
   "gpu":  "NVIDIA GeForce RTX 4060 Laptop GPU",

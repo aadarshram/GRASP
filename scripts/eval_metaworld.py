@@ -18,6 +18,9 @@ sys.path.insert(0, script_dir)
 sys.path.insert(0, os.path.join(repo_root, 'src/llava-pythia'))
 sys.path.insert(0, os.path.join(repo_root, 'src'))
 
+# Import camera configuration
+from camera_config import get_camera_names, get_camera_ids
+
 import transformers
 from transformers import CLIPImageProcessor
 from llava_pythia.llava_pythia_utils import load_llava_pythia
@@ -301,6 +304,11 @@ def main():
     successes = 0
     frames = []
     
+    # Get selected cameras for evaluation
+    selected_cameras = get_camera_names()
+    selected_cam_ids = get_camera_ids()
+    print(f"Evaluating with cameras: {selected_cameras}")
+    
     # 3. Eval Loop
     for ep in range(args.num_episodes):
         obs = env.reset()
@@ -318,36 +326,47 @@ def main():
         done = False
         
         while not done and step < 500:
-            # Render from three different camera views (matching training code exactly)
-            # Camera IDs: 1 (left), 2 (right), 0 (top)
-            img_left = render_from_camera(1, image_size=(180, 320))
-            img_left = cv2.rotate(img_left, cv2.ROTATE_180)
+            # Render from selected cameras dynamically
+            camera_images = {}
+            for cam_name, cam_id in selected_cam_ids.items():
+                img = render_from_camera(cam_id, image_size=(180, 320))
+                if cam_name != 'top':  # Rotate non-top cameras
+                    img = cv2.rotate(img, cv2.ROTATE_180)
+                camera_images[cam_name] = img
             
-            img_right = render_from_camera(2, image_size=(180, 320))
-            img_right = cv2.rotate(img_right, cv2.ROTATE_180)
+            # Stack selected cameras for video - arrange in a grid
+            num_cams = len(selected_cameras)
+            if num_cams == 1:
+                img_combined = camera_images[selected_cameras[0]]
+            elif num_cams == 2:
+                img_combined = np.hstack([camera_images[selected_cameras[0]], camera_images[selected_cameras[1]]])
+            elif num_cams == 3:
+                img_combined = np.hstack([camera_images[selected_cameras[0]], camera_images[selected_cameras[1]], camera_images[selected_cameras[2]]])
+            elif num_cams >= 4:
+                row1 = np.hstack([camera_images[selected_cameras[0]], camera_images[selected_cameras[1]]])
+                row2 = np.hstack([camera_images[selected_cameras[2]], camera_images[selected_cameras[3]]])
+                img_combined = np.vstack([row1, row2])
+            else:
+                img_combined = camera_images[selected_cameras[0]]
             
-            img_top = render_from_camera(0, image_size=(180, 320))
-            # No rotation for top view
-            
-            # Stack images horizontally for video
-            img_combined = np.hstack([img_left, img_top, img_right])
             # Convert RGB to BGR for OpenCV
             episode_frames.append(cv2.cvtColor(img_combined, cv2.COLOR_RGB2BGR))
 
-            # Prepare images for model inference
-            img_pil_left = Image.fromarray(img_left)
-            image_tensor_left = image_processor.preprocess(img_pil_left, return_tensors='pt')['pixel_values'][0]
+            # Prepare images for model inference - use first 3 selected cameras
+            selected_cam_list = selected_cameras[:3]
+            while len(selected_cam_list) < 3:
+                selected_cam_list.append(selected_cam_list[-1])  # Duplicate last camera
             
-            img_pil_right = Image.fromarray(img_right)
-            image_tensor_right = image_processor.preprocess(img_pil_right, return_tensors='pt')['pixel_values'][0]
+            image_tensor_list = []
+            for cam_name in selected_cam_list:
+                img_pil = Image.fromarray(camera_images[cam_name])
+                image_tensor = image_processor.preprocess(img_pil, return_tensors='pt')['pixel_values'][0]
+                image_tensor_list.append(image_tensor)
             
-            img_pil_top = Image.fromarray(img_top)
-            image_tensor_top = image_processor.preprocess(img_pil_top, return_tensors='pt')['pixel_values'][0]
-            
-            # Stack images for model (left, right, top) matching training data format
-            images = image_tensor_left.unsqueeze(0).cuda().float()
-            images_r = image_tensor_right.unsqueeze(0).cuda().float()
-            images_top = image_tensor_top.unsqueeze(0).cuda().float()
+            # Stack images for model matching training data format
+            images = image_tensor_list[0].unsqueeze(0).cuda().float()
+            images_r = image_tensor_list[1].unsqueeze(0).cuda().float()
+            images_top = image_tensor_list[2].unsqueeze(0).cuda().float()
             
             # Text Prompt
             prompt = f"interactions with {args.env_name}\n"

@@ -3,7 +3,7 @@
 Generate dummy HDF5 dataset files for testing the VLA training pipeline.
 
 This script creates synthetic robot demonstration data with the required structure:
-- Multi-camera RGB images (left, right, top)
+- Multi-camera RGB images (configured via camera_config.py)
 - Robot joint positions (qpos) and velocities (qvel)
 - Action sequences
 - Language instructions
@@ -16,7 +16,13 @@ import h5py
 import numpy as np
 import argparse
 import os
+import sys
 from pathlib import Path
+
+# Add scripts directory to path for camera_config import
+scripts_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, scripts_dir)
+from camera_config import get_camera_names, METAWORLD_CAMERAS
 
 
 def generate_dummy_episode(
@@ -77,56 +83,58 @@ def generate_dummy_episode(
         phase = np.random.uniform(0, 2*np.pi)
         action[:, i] = amplitude * np.sin(frequency * t + phase)
     
-    # Generate synthetic camera images
+    # Generate synthetic camera images for selected cameras
     height, width = image_size
+    selected_cameras = get_camera_names()
     
-    # Create base images with different colors for each camera
-    left_images = np.zeros((episode_length, height, width, 3), dtype=np.uint8)
-    right_images = np.zeros((episode_length, height, width, 3), dtype=np.uint8)
-    top_images = np.zeros((episode_length, height, width, 3), dtype=np.uint8)
+    # Create image buffers for selected cameras
+    image_buffers = {}
+    color_configs = {
+        'top': (0, [100, 100, 255]),     # Blue tint
+        'left': (2, [255, 100, 100]),    # Red tint
+        'right': (1, [100, 255, 100]),   # Green tint
+        'front': (1, [100, 200, 200]),   # Cyan tint
+        'gripper': (2, [200, 100, 200])  # Magenta tint
+    }
+    
+    for cam_name in selected_cameras:
+        image_buffers[cam_name] = np.zeros((episode_length, height, width, 3), dtype=np.uint8)
     
     for t_idx in range(episode_length):
         # Animate a simple scene: moving colored square
-        # Square position moves smoothly across the image
         x_pos = int((t_idx / episode_length) * (width - 100))
         y_pos = int(height / 2 - 50 + 30 * np.sin(4 * np.pi * t_idx / episode_length))
         
-        # Left camera - reddish tint
-        left_images[t_idx] = np.random.randint(80, 120, (height, width, 3), dtype=np.uint8)
-        left_images[t_idx, :, :, 2] += 60  # Red channel
-        # Draw moving square
-        left_images[t_idx, y_pos:y_pos+100, x_pos:x_pos+100, :] = [255, 100, 100]
-        
-        # Right camera - greenish tint
-        right_images[t_idx] = np.random.randint(80, 120, (height, width, 3), dtype=np.uint8)
-        right_images[t_idx, :, :, 1] += 60  # Green channel
-        # Draw moving square from different angle
-        right_images[t_idx, y_pos+20:y_pos+120, x_pos+20:x_pos+120, :] = [100, 255, 100]
-        
-        # Top camera - bluish tint
-        top_images[t_idx] = np.random.randint(80, 120, (height, width, 3), dtype=np.uint8)
-        top_images[t_idx, :, :, 0] += 60  # Blue channel
-        # Draw moving circle for variety
-        center_x, center_y = x_pos + 50, height // 2
-        for dy in range(-40, 40):
-            for dx in range(-40, 40):
-                if dx*dx + dy*dy < 1600:  # Circle radius 40
-                    cy, cx = center_y + dy, center_x + dx
-                    if 0 <= cy < height and 0 <= cx < width:
-                        top_images[t_idx, cy, cx, :] = [100, 100, 255]
+        for cam_name in selected_cameras:
+            channel, square_color = color_configs.get(cam_name, (0, [150, 150, 150]))
+            
+            # Base color with camera-specific tint
+            image_buffers[cam_name][t_idx] = np.random.randint(80, 120, (height, width, 3), dtype=np.uint8)
+            image_buffers[cam_name][t_idx, :, :, channel] += 60
+            
+            # Draw moving square
+            offset = METAWORLD_CAMERAS.get(cam_name, {}).get('id', 0) * 10  # Different offset per camera
+            y_off, x_off = y_pos + offset, x_pos + offset
+            y_end = min(y_off + 100, height)
+            x_end = min(x_off + 100, width)
+            image_buffers[cam_name][t_idx, max(0,y_off):y_end, max(0,x_off):x_end, :] = square_color
     
     # Sample a task description
     language = np.random.choice(task_variations)
     
-    return {
+    # Build return dict
+    result = {
         'qpos': qpos,
         'qvel': qvel,
         'action': action,
-        'left_images': left_images,
-        'right_images': right_images,
-        'top_images': top_images,
-        'language': language
+        'language': language,
+        'selected_cameras': selected_cameras
     }
+    # Add image buffers with original naming for compatibility
+    for cam_name in selected_cameras:
+        result[f'{cam_name}_images'] = image_buffers[cam_name]
+    
+    return result
 
 
 def save_episode_hdf5(save_path, episode_data, compress=False, is_sim=True):
@@ -141,6 +149,9 @@ def save_episode_hdf5(save_path, episode_data, compress=False, is_sim=True):
     """
     import cv2
     
+    # Get selected cameras from episode_data or camera_config
+    selected_cameras = episode_data.get('selected_cameras', get_camera_names())
+    
     with h5py.File(save_path, 'w') as f:
         # Store actions
         f.create_dataset('action', data=episode_data['action'], dtype=np.float32)
@@ -150,26 +161,22 @@ def save_episode_hdf5(save_path, episode_data, compress=False, is_sim=True):
         obs_group.create_dataset('qpos', data=episode_data['qpos'], dtype=np.float32)
         obs_group.create_dataset('qvel', data=episode_data['qvel'], dtype=np.float32)
         
-        # Store images
+        # Store images for selected cameras
         img_group = obs_group.create_group('images')
         
-        if compress:
-            # Store compressed JPEG images to save disk space
-            # HDF5 needs special handling for variable-length data
-            compressed_left = [cv2.imencode('.jpg', img)[1] for img in episode_data['left_images']]
-            compressed_right = [cv2.imencode('.jpg', img)[1] for img in episode_data['right_images']]
-            compressed_top = [cv2.imencode('.jpg', img)[1] for img in episode_data['top_images']]
-            
-            # Create variable-length dtype for compressed images
-            dt = h5py.vlen_dtype(np.dtype('uint8'))
-            img_group.create_dataset('left', data=[img.tobytes() for img in compressed_left], dtype=dt)
-            img_group.create_dataset('right', data=[img.tobytes() for img in compressed_right], dtype=dt)
-            img_group.create_dataset('top', data=[img.tobytes() for img in compressed_top], dtype=dt)
-        else:
-            # Store uncompressed images
-            img_group.create_dataset('left', data=episode_data['left_images'], dtype=np.uint8)
-            img_group.create_dataset('right', data=episode_data['right_images'], dtype=np.uint8)
-            img_group.create_dataset('top', data=episode_data['top_images'], dtype=np.uint8)
+        for cam_name in selected_cameras:
+            img_key = f'{cam_name}_images'
+            if img_key in episode_data:
+                cam_images = episode_data[img_key]
+                
+                if compress:
+                    # Store compressed JPEG images to save disk space
+                    compressed = [cv2.imencode('.jpg', img)[1] for img in cam_images]
+                    dt = h5py.vlen_dtype(np.dtype('uint8'))
+                    img_group.create_dataset(cam_name, data=[img.tobytes() for img in compressed], dtype=dt)
+                else:
+                    # Store uncompressed images
+                    img_group.create_dataset(cam_name, data=cam_images, dtype=np.uint8)
         
         # Store language instruction
         f.create_dataset('language_raw', data=[episode_data['language'].encode('utf-8')], 
@@ -184,7 +191,8 @@ def save_episode_hdf5(save_path, episode_data, compress=False, is_sim=True):
 def validate_hdf5(filepath):
     """Validate that HDF5 file has the required structure."""
     required_keys = ['/action', '/observations/qpos', '/observations/qvel', '/language_raw']
-    camera_keys = ['/observations/images/left', '/observations/images/right', '/observations/images/top']
+    selected_cameras = get_camera_names()
+    camera_keys = [f'/observations/images/{cam}' for cam in selected_cameras]
     
     try:
         with h5py.File(filepath, 'r') as f:

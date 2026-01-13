@@ -57,9 +57,9 @@ Example Usage:
 Output:
 -------
 - Evaluation videos are saved to: outputs/eval/eval_{env_type}_{task_name}_ep{episode_id}.mp4
-- Videos show three camera views stacked horizontally: [left, top, right]
-- metaworld cam ids: { 0: top, 1: left, 2: right, 3: top-right, 4: front, 5: gripper}
-- libero camera names: agentview, birdview, sideview, robot0_eye_in_hand, frontview, galleryview, robot0_robotview
+- Videos show selected camera views (configured in camera_config.py)
+- MetaWorld standard camera mapping: {0: top, 1: left, 2: right, 4: front, 5: gripper}
+- Libero camera names: agentview, birdview, sideview, robot0_eye_in_hand, frontview, galleryview, robot0_robotview
 - Console outputs success rate and episode statistics
 """
 
@@ -91,6 +91,9 @@ sys.path.insert(0, repo_root)
 sys.path.insert(0, script_dir)
 sys.path.insert(0, os.path.join(repo_root, 'src/llava-pythia'))
 sys.path.insert(0, os.path.join(repo_root, 'src'))
+
+# Import camera configuration
+from camera_config import get_camera_names, get_camera_ids
 
 import transformers
 from transformers import CLIPImageProcessor
@@ -521,6 +524,11 @@ def main():
     # ============================================================================
     successes = 0
     frames = []
+    
+    # Get selected cameras for Metaworld evaluation
+    selected_cameras = get_camera_names()
+    selected_cam_ids = get_camera_ids()
+    
     for ep in range(args.num_episodes):
         obs = env.reset()
         if isinstance(obs, tuple): 
@@ -531,33 +539,67 @@ def main():
         done = False
         
         while not done and step < 500:
-            # Render 4-camera views for both environments
+            # Render selected cameras for Metaworld, or hardcoded for Libero
             if args.env_type == "metaworld":
-                # METAWORLD cam ids: { 0: top, 1: left, 2: right, 3: top-right, 4: front, 5: gripper}
-                img_bottom_left = cv2.rotate(render_from_camera(camera_id=1, image_size=(180, 320)), cv2.ROTATE_180)
-                img_bottom_right = cv2.rotate(render_from_camera(camera_id=2, image_size=(180, 320)), cv2.ROTATE_180)
-                img_top_left = render_from_camera(camera_id=0, image_size=(180, 320))
-                img_top_right = render_from_camera(camera_id=4, image_size=(180, 320))
+                # Use selected cameras from camera_config
+                camera_images = {}
+                for cam_name, cam_id in selected_cam_ids.items():
+                    img = render_from_camera(camera_id=cam_id, image_size=(180, 320))
+                    if cam_name != 'top':  # Rotate non-top cameras
+                        img = cv2.rotate(img, cv2.ROTATE_180)
+                    camera_images[cam_name] = img
+                
+                # Stack cameras for display - arrange selected cameras in a grid
+                num_cams = len(selected_cameras)
+                if num_cams == 1:
+                    # Single camera: show it alone
+                    img_combined = camera_images[selected_cameras[0]]
+                elif num_cams == 2:
+                    # Two cameras: side by side
+                    img_combined = np.hstack([camera_images[selected_cameras[0]], camera_images[selected_cameras[1]]])
+                elif num_cams == 3:
+                    # Three cameras: try 2x2 with one empty, or hstack all
+                    img_combined = np.hstack([camera_images[selected_cameras[0]], camera_images[selected_cameras[1]], camera_images[selected_cameras[2]]])
+                elif num_cams >= 4:
+                    # Four or more: 2x2 grid
+                    row1 = np.hstack([camera_images[selected_cameras[0]], camera_images[selected_cameras[1]]])
+                    row2 = np.hstack([camera_images[selected_cameras[2]], camera_images[selected_cameras[3]]])
+                    img_combined = np.vstack([row1, row2])
+                else:
+                    img_combined = camera_images[selected_cameras[0]]
+                    
             else:
                 # LIBERO camera names: agentview, birdview, sideview, robot0_eye_in_hand, frontview, galleryview, robot0_robotview
                 img_top_right = render_from_camera(camera_name="frontview", image_size=(180, 320))
                 img_top_left = render_from_camera(camera_name="birdview", image_size=(180, 320))
                 img_bottom_left = render_from_camera(camera_name="sideview", image_size=(180, 320))
                 img_bottom_right = render_from_camera(camera_name="agentview", image_size=(180, 320))
+                
+                top_row = np.hstack([img_top_left, img_top_right])
+                bottom_row = np.hstack([img_bottom_left, img_bottom_right])
+                img_combined = np.vstack([top_row, bottom_row])
             
-            top_row = np.hstack([img_top_left, img_top_right])
-            bottom_row = np.hstack([img_bottom_left, img_bottom_right])
-            img_combined = np.vstack([top_row, bottom_row])
             episode_frames.append(cv2.cvtColor(img_combined, cv2.COLOR_RGB2BGR))
 
-            # Preprocess images for VLM
-            image_tensor_left = image_processor.preprocess(Image.fromarray(img_bottom_left), return_tensors='pt')['pixel_values'][0]
-            image_tensor_right = image_processor.preprocess(Image.fromarray(img_bottom_right), return_tensors='pt')['pixel_values'][0]
-            image_tensor_top = image_processor.preprocess(Image.fromarray(img_top_left), return_tensors='pt')['pixel_values'][0]
+            # Preprocess images for VLM - use first 3 selected cameras or pad with zeros
+            selected_cam_list = selected_cameras[:3]  # Take first 3 cameras for VLM
             
-            images = image_tensor_left.unsqueeze(0).cuda().float()
-            images_r = image_tensor_right.unsqueeze(0).cuda().float()
-            images_top = image_tensor_top.unsqueeze(0).cuda().float()
+            # Pad to 3 cameras if fewer selected
+            while len(selected_cam_list) < 3:
+                selected_cam_list.append(selected_cam_list[-1])  # Duplicate last camera
+            
+            image_tensor_list = []
+            for i, cam_name in enumerate(selected_cam_list):
+                img_to_process = camera_images[cam_name] if args.env_type == "metaworld" else (
+                    img_bottom_left if cam_name == 'left' or i == 0 else 
+                    (img_bottom_right if cam_name == 'right' or i == 1 else img_top_left)
+                )
+                image_tensor = image_processor.preprocess(Image.fromarray(img_to_process), return_tensors='pt')['pixel_values'][0]
+                image_tensor_list.append(image_tensor)
+            
+            images = image_tensor_list[0].unsqueeze(0).cuda().float()
+            images_r = image_tensor_list[1].unsqueeze(0).cuda().float()
+            images_top = image_tensor_list[2].unsqueeze(0).cuda().float()
             
             # Prepare text prompt
             prompt = task_description + "\n"
