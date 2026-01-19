@@ -72,7 +72,7 @@ deepspeed --master_port 29600 --num_gpus=1 --num_nodes=1 "$SCRIPT_DIR/train.py" 
   --lazy_preprocess True \
   --action_head_type $ACTION_HEAD \
   --action_dim 4 \
-  --state_dim 16 \
+  --state_dim 4 \
   --use_state True \
   --concat "token_cat" \
   --window_size 6 \
