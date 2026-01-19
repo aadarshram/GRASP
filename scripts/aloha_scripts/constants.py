@@ -17,10 +17,11 @@ TASK_CONFIGS = {
     },
     'metaworld_task': {
         'dataset_dir': [
-            "/kaggle/working/GRASP/data/metaworld_task",
+            "aadarshram/metaworld-pick-place-v3",
+            # "/kaggle/working/GRASP/data/metaworld_task",
         ],
         'episode_len': 500, # Matched to generation script
-        'camera_names': ['front', 'top'],
+        'camera_names': ['front'],
         'stats_dir': None,
         'sample_weights': None,
         'train_ratio': 0.95,

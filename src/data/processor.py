@@ -557,7 +557,8 @@ class DataCollatorForSupervisedDataset(object):
         # print("9"*50)
         # print(batch[images_r.shape])
         for key in ['actions', 'images', 'images_r']:
-            batch[key] = torch.nan_to_num(batch[key])
+            if batch[key] is not None:
+                batch[key] = torch.nan_to_num(batch[key])
 
         # for k,v in batch.items():
         #     batch[k] = v.to(dtype=torch.bfloat16)
