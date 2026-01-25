@@ -15,7 +15,7 @@ TASK_CONFIGS = {
         'dataset_dir': [
             "/data/my_task",  # TODO: Update this path to your HDF5 files
         ],
-        'episode_len': 1000,
+        'episode_len': 500,
         # Uses camera names from camera_config
         'camera_names': get_camera_names(),  
         'stats_dir': None,  # Optional: use different dir for normalization stats
@@ -25,9 +25,9 @@ TASK_CONFIGS = {
     },
     'vla_diff_head_lora': {
         'dataset_dir': [
-            "/home/hemanthm/Desktop/GRASP/GRASP/data/metaworld_task",  # Dummy dataset for testing
+            "/home/hemanthm/Desktop/GRASP/GRASP/data/metaworld_pick-place-v3_front",  # Dummy dataset for testing
         ],
-        'episode_len': 1000,
+        'episode_len': 500,
         # Uses camera names from camera_config
         'camera_names': get_camera_names(),
         'stats_dir': None,  # Optional: use different dir for normalization stats
@@ -37,7 +37,7 @@ TASK_CONFIGS = {
     },
     'metaworld_task': {
         'dataset_dir': [
-            "/home/hemanthm/Desktop/GRASP/GRASP/data/metaworld_dataset",
+            "/home/hemanthm/Desktop/GRASP/GRASP/data/metaworld_pick-place-v3_front",
         ],
         'episode_len': 500, # Matched to generation script
         # Uses camera names from camera_config - will include only selected cameras
@@ -46,6 +46,15 @@ TASK_CONFIGS = {
         'sample_weights': None,
         'train_ratio': 0.95,
         'name_filter': lambda n: n.endswith('.hdf5')
+    },
+    'metaworld_hf': {
+        'hf_dataset_name': 'aadarshram/metaworld-pick-place-v3',  # HuggingFace dataset
+        'episode_len': 500,  # Max episode length
+        'camera_names': get_camera_names(),  # Uses camera_config (should be ['right'] for corner2)
+        'stats_dir': None,
+        'sample_weights': None,
+        'train_ratio': 0.95,  # 95% train, 5% validation
+        'use_hf_dataset': True,  # Flag to indicate HuggingFace dataset
     },
 }
 ####################################################################################

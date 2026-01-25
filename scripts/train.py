@@ -44,7 +44,7 @@ sys.path.insert(0, script_dir)  # For aloha_scripts
 sys.path.insert(0, os.path.join(repo_root, 'src/llava-pythia'))  # For llava_pythia
 sys.path.insert(0, os.path.join(repo_root, 'src'))  # For policy_heads
 
-from src.data.datasets import load_data  # data functions
+from src.data.datasets import load_data, load_hf_data  # data functions
 from src.data.datasets import set_seed  # helper functions
 from src.data.datasets import LlavaPythiaProcess
 from src.data.processor import *
@@ -64,8 +64,8 @@ local_rank = None
 @dataclass
 class ActionArguments:
     action_head_type: str = field(default="droid_diffusion") # action head type, 'act', 'droid_diffusion'
-    action_dim: int = field(default=10)
-    state_dim: int = field(default=7)
+    action_dim: int = field(default=4)  # Changed from 10 to 4 for metaworld HF dataset (x, y, z, gripper)
+    state_dim: int = field(default=4)   # Changed from 7 to 4 for metaworld HF dataset (x, y, z, gripper)
     chunk_size: int = field(default=16) # size of action chunk, same as mobile aloha
     use_state: bool = field(default=True) # whether to use state/proprioception in the action head
     window_size: int = field(default=6) # temporal window size for action prediction
@@ -276,33 +276,84 @@ def main(config=None, llava_pythia_config=None):
     set_seed(1)
     # get task parameters
     task_config = TASK_CONFIGS[config['data_args'].task_name]
-    dataset_dir = task_config['dataset_dir']
-    episode_len = task_config['episode_len']
-    camera_names = task_config['camera_names']
-    stats_dir = task_config.get('stats_dir', None)
-    sample_weights = task_config.get('sample_weights', None)
-    train_ratio = task_config.get('train_ratio', 0.95)
-    name_filter = task_config.get('name_filter', lambda _: True)
+    
+    # Check if this is a HuggingFace dataset
+    use_hf_dataset = task_config.get('use_hf_dataset', False)
+    
+    if use_hf_dataset:
+        # HuggingFace dataset configuration
+        hf_dataset_name = task_config['hf_dataset_name']
+        episode_len = task_config['episode_len']
+        camera_names = task_config['camera_names']
+        train_ratio = task_config.get('train_ratio', 0.95)
+        
+        print(f"Using HuggingFace dataset: {hf_dataset_name}")
+    else:
+        # Local HDF5 dataset configuration
+        dataset_dir = task_config['dataset_dir']
+        episode_len = task_config['episode_len']
+        camera_names = task_config['camera_names']
+        stats_dir = task_config.get('stats_dir', None)
+        sample_weights = task_config.get('sample_weights', None)
+        train_ratio = task_config.get('train_ratio', 0.95)
+        name_filter = task_config.get('name_filter', lambda _: True)
 
     config['camera_names'] = camera_names
     config['episode_len'] = episode_len
 
-    if 'pythia' in config['model_args'].model_name_or_path.lower():
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            config['model_args'].model_name_or_path,
-            cache_dir=config['training_args'].cache_dir,
-            model_max_length=config['training_args'].model_max_length,
-            padding_side="right"
-        )
-        tokenizer.pad_token_id = 1
+    # Initialize tokenizer for pythia, opt, and other language models
+    # Note: Pythia models require use_fast=True to use GPTNeoXTokenizerFast
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        config['model_args'].model_name_or_path,
+        cache_dir=config['training_args'].cache_dir,
+        model_max_length=config['training_args'].model_max_length,
+        padding_side="right",
+        use_fast=True,  # Required for GPTNeoXTokenizerFast (Pythia models)
+        trust_remote_code=True
+    )
+    
+    # Set appropriate pad token based on model type
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token_id = 1
 
     model, data_args = LlavaUtils.load_llava_pythia(config=config, llava_pythia_config=llava_pythia_config, rank0_print=rank0_print, tokenizer=tokenizer)
 
     # prepare process class
     llava_pythia_process = LlavaPythiaProcess(data_args, tokenizer=tokenizer)
 
-    # load data
-    train_dataset, val_dataset, stats, sampler_params = load_data(dataset_dir, name_filter, camera_names, config['training_args'].per_device_train_batch_size, config['training_args'].per_device_eval_batch_size, config['action_args'].chunk_size,skip_mirrored_data=config['data_args'].skip_mirrored_data,config=config,policy_class=config['action_args'].action_head_type, stats_dir_l=stats_dir,sample_weights=sample_weights, train_ratio=train_ratio, return_dataset=True, llava_pythia_process=llava_pythia_process)
+    # load data based on dataset type
+    if use_hf_dataset:
+        print(f"Loading HuggingFace dataset: {hf_dataset_name}")
+        train_dataset, val_dataset, stats, sampler_params = load_hf_data(
+            hf_dataset_name,
+            camera_names,
+            config['training_args'].per_device_train_batch_size,
+            config['training_args'].per_device_eval_batch_size,
+            config['action_args'].chunk_size,
+            config=config,
+            policy_class=config['action_args'].action_head_type,
+            train_ratio=train_ratio,
+            llava_pythia_process=llava_pythia_process
+        )
+    else:
+        print(f"Loading local HDF5 dataset from: {dataset_dir}")
+        train_dataset, val_dataset, stats, sampler_params = load_data(
+            dataset_dir,
+            name_filter,
+            camera_names,
+            config['training_args'].per_device_train_batch_size,
+            config['training_args'].per_device_eval_batch_size,
+            config['action_args'].chunk_size,
+            skip_mirrored_data=config['data_args'].skip_mirrored_data,
+            config=config,
+            policy_class=config['action_args'].action_head_type,
+            stats_dir_l=stats_dir,
+            sample_weights=sample_weights,
+            train_ratio=train_ratio,
+            return_dataset=True,
+            llava_pythia_process=llava_pythia_process
+        )
 
     best_ckpt_info = train_bc(train_dataset=train_dataset, model=model, val_dataset=val_dataset, config=config, sampler_params=sampler_params, tokenizer=tokenizer)
     # save dataset stats

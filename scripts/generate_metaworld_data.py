@@ -315,9 +315,9 @@ def worker(args_tuple):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output_dir', type=str, default='data/metaworld_pick-place-v3')
-    parser.add_argument('--num_episodes', type=int, default=50) 
+    parser.add_argument('--num_episodes', type=int, default=5) 
     parser.add_argument('--env_name', type=str, default='pick-place-v3')
-    parser.add_argument('--num_workers', type=int, default=4, help='Number of parallel workers')
+    parser.add_argument('--num_workers', type=int, default=16, help='Number of parallel workers')
     parser.add_argument('--early_stop', action='store_true', help='Stop episode on success')
     parser.add_argument('--save_video', action='store_true', help='Save MP4 videos in addition to HDF5 files')
     args = parser.parse_args()

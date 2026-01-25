@@ -150,8 +150,8 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
             if training_args.fp16:
                 model.to(torch.float16)
     else:
-        if 'pythia' in model_arch.lower():
-            model = LlavaPythiaForCausalLM.from_pretrained(
+        if 'phi' in model_arch.lower():
+            model = MiphaPhi15ForCausalLM.from_pretrained(
                 config['model_args'].model_name_or_path,
                 config=llava_pythia_config,
                 cache_dir=config['training_args'].cache_dir,
@@ -160,8 +160,9 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
                 # attn_implementation="flash_attention_2",
                 **config['bnb_model_from_pretrained_args']
             )
-        elif 'phi' in model_arch.lower():
-            model = MiphaPhi15ForCausalLM.from_pretrained(
+        else:
+            # Default to LlavaPythiaForCausalLM for pythia, OPT, and other compatible architectures
+            model = LlavaPythiaForCausalLM.from_pretrained(
                 config['model_args'].model_name_or_path,
                 config=llava_pythia_config,
                 cache_dir=config['training_args'].cache_dir,

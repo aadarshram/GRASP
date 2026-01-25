@@ -54,6 +54,17 @@ Example Usage:
        --num_episodes 5 \
        --output_dir outputs/eval/HF_model
 
+5. Evaluate Mothish model on Metaworld:
+   python scripts/eval.py \
+       --env_type metaworld \
+       --env_name pick-place-v3 \
+       --hf_model huggymotz/vla-checkpoint-50ep \
+       --hf_head_file adapter_model.safetensors \
+       --action_dim 4 \
+       --state_dim 7 \
+       --num_episodes 5 \
+       --output_dir outputs/eval/Motz
+
 Output:
 -------
 - Evaluation videos are saved to: outputs/eval/eval_{env_type}_{task_name}_ep{episode_id}.mp4
@@ -88,6 +99,10 @@ except ImportError:
 script_dir = os.path.dirname(__file__)
 repo_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, repo_root)
+
+# Global image dimensions - modify these to change resolution throughout evaluation
+IMAGE_HEIGHT = 540
+IMAGE_WIDTH = 960
 sys.path.insert(0, script_dir)
 sys.path.insert(0, os.path.join(repo_root, 'src/llava-pythia'))
 sys.path.insert(0, os.path.join(repo_root, 'src'))
@@ -283,7 +298,14 @@ def main():
             head_path = hf_hub_download(repo_id=args.hf_model, filename=args.hf_head_file)
             print(f"Loading diffusion head from {head_path}")
             
-            head_state_dict = torch.load(head_path, map_location='cpu')
+            # --- FIX STARTS HERE ---
+            if head_path.endswith('.safetensors'):
+                from safetensors.torch import load_file
+                head_state_dict = load_file(head_path)
+            else:
+                # Set weights_only=False to fix the UnpicklingError on PyTorch 2.6+
+                head_state_dict = torch.load(head_path, map_location='cpu', weights_only=False)
+            # --- FIX ENDS HERE ---
             
             # Extract relevant weights (action_head, mm_projector, embed_out)
             weights_to_load = {}
@@ -446,8 +468,8 @@ def main():
         # Initialize environment
         env_args = {
             "bddl_file_name": bddl_file_path,
-            "camera_heights": 180,
-            "camera_widths": 320,
+            "camera_heights": IMAGE_HEIGHT,
+            "camera_widths": IMAGE_WIDTH,
         }
         
         print(f"Initializing environment with BDDL file: {bddl_file_path}")
@@ -459,18 +481,20 @@ def main():
         for _ in range(5):
             env.step(np.zeros(args.action_dim))
     
-    def render_from_camera(camera_id=None, camera_name=None, image_size=(180, 320)):
+    def render_from_camera(camera_id=None, camera_name=None, image_size=None):
         """
         Render from a specific camera.
         
         Args:
             camera_id: Camera index for Metaworld
             camera_name: Camera name for Libero (overrides camera_id if provided)
-            image_size: Tuple of (height, width)
+            image_size: Tuple of (height, width). If None, uses global IMAGE_HEIGHT and IMAGE_WIDTH
             
         Returns:
             RGB image array
         """
+        if image_size is None:
+            image_size = (IMAGE_HEIGHT, IMAGE_WIDTH)
         if args.env_type == "libero":
             # Use camera_name if provided, otherwise fall back to index-based lookup
             if camera_name is None:
@@ -544,7 +568,7 @@ def main():
                 # Use selected cameras from camera_config
                 camera_images = {}
                 for cam_name, cam_id in selected_cam_ids.items():
-                    img = render_from_camera(camera_id=cam_id, image_size=(180, 320))
+                    img = render_from_camera(camera_id=cam_id)
                     if cam_name != 'top':  # Rotate non-top cameras
                         img = cv2.rotate(img, cv2.ROTATE_180)
                     camera_images[cam_name] = img
@@ -570,10 +594,10 @@ def main():
                     
             else:
                 # LIBERO camera names: agentview, birdview, sideview, robot0_eye_in_hand, frontview, galleryview, robot0_robotview
-                img_top_right = render_from_camera(camera_name="frontview", image_size=(180, 320))
-                img_top_left = render_from_camera(camera_name="birdview", image_size=(180, 320))
-                img_bottom_left = render_from_camera(camera_name="sideview", image_size=(180, 320))
-                img_bottom_right = render_from_camera(camera_name="agentview", image_size=(180, 320))
+                img_top_right = render_from_camera(camera_name="frontview")
+                img_top_left = render_from_camera(camera_name="birdview")
+                img_bottom_left = render_from_camera(camera_name="sideview")
+                img_bottom_right = render_from_camera(camera_name="agentview")
                 
                 top_row = np.hstack([img_top_left, img_top_right])
                 bottom_row = np.hstack([img_bottom_left, img_bottom_right])

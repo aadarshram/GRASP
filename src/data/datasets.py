@@ -6,6 +6,20 @@ import fnmatch
 import cv2
 import torchvision.transforms as transforms
 
+# Patch pyarrow compatibility issue before importing datasets
+try:
+    import pyarrow as pa
+    original_concat_tables = pa.concat_tables
+    def patched_concat_tables(tables, **kwargs):
+        kwargs.pop('promote_options', None)
+        return original_concat_tables(tables, **kwargs)
+    pa.concat_tables = patched_concat_tables
+except Exception:
+    pass
+
+from datasets import load_dataset
+from PIL import Image
+
 import IPython
 from src.data.processor import preprocess, preprocess_multimodal
 import copy
@@ -548,3 +562,347 @@ def detach_dict(d):
 def set_seed(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
+
+
+class HFEpisodicDataset(torch.utils.data.Dataset):
+    """
+    Dataset class for loading data from HuggingFace datasets.
+    Supports loading multi-camera images, actions, and robot states for each time step.
+    """
+    def __init__(self, hf_dataset, camera_names, norm_stats, chunk_size, policy_class, llava_pythia_process=None, imsize=480):
+        """
+        Initializes the HFEpisodicDataset class.
+        
+        Args:
+            hf_dataset: HuggingFace dataset object
+            camera_names (list of str): List of camera names (e.g., ['corner2'])
+            norm_stats (dict): Normalization statistics for actions and states
+            chunk_size (int): Number of time steps to return in each sample
+            policy_class (str): Type of policy being used (e.g., "ACT", "diffusion")
+            llava_pythia_process (optional): Process for further data processing
+            imsize (int): Target image size (default=480)
+        """
+        super(HFEpisodicDataset).__init__()
+        self.hf_dataset = hf_dataset
+        self.camera_names = camera_names
+        self.norm_stats = norm_stats
+        self.chunk_size = chunk_size
+        self.policy_class = policy_class
+        self.llava_pythia_process = llava_pythia_process
+        self.imsize = imsize
+        
+        # Build episode index mapping
+        self.episode_starts = []
+        self.episode_lengths = []
+        current_episode = -1
+        start_idx = 0
+        
+        for idx in range(len(hf_dataset)):
+            ep_idx = hf_dataset[idx]['episode_index']
+            if ep_idx != current_episode:
+                if current_episode != -1:
+                    self.episode_lengths.append(idx - start_idx)
+                self.episode_starts.append(idx)
+                current_episode = ep_idx
+                start_idx = idx
+        # Add the last episode
+        self.episode_lengths.append(len(hf_dataset) - start_idx)
+        
+        self.max_episode_len = max(self.episode_lengths)
+        
+        if 'diffusion' in self.policy_class:
+            self.augment_images = True
+        else:
+            self.augment_images = False
+        self.transformations = None
+        
+        # Initialize transformations
+        a = self.__getitem__(0)
+        self.is_sim = False
+
+    def __len__(self):
+        return len(self.hf_dataset)
+
+    def __getitem__(self, index):
+        """
+        Retrieves a single data sample from the HuggingFace dataset.
+        
+        Args:
+            index (int): The index of the data sample to retrieve.
+            
+        Returns:
+            Processed sample dictionary containing image, state, action, is_pad, and raw_lang.
+        """
+        sample = self.hf_dataset[index]
+        
+        # Get episode and frame information
+        episode_idx = sample['episode_index']
+        frame_idx = sample['frame_index']
+        
+        # Find which episode this index belongs to
+        ep_list_idx = None
+        for i, start_idx in enumerate(self.episode_starts):
+            if index >= start_idx and index < start_idx + self.episode_lengths[i]:
+                ep_list_idx = i
+                break
+        
+        episode_start = self.episode_starts[ep_list_idx]
+        episode_len = self.episode_lengths[ep_list_idx]
+        local_idx = index - episode_start
+        
+        # Load image - HF dataset has single camera view "corner2"
+        # Convert PIL Image to numpy array
+        image = np.array(sample['observation.image'])
+        if self.imsize != image.shape[0]:
+            image = cv2.resize(image, (self.imsize, self.imsize))
+        
+        # Load state (qpos) - observation.state is [x, y, z, gripper]
+        qpos = np.array(sample['observation.state'], dtype=np.float32)
+        
+        # Load language instruction (use a default one for now)
+        raw_lang = "pick and place the object"
+        
+        # Get actions from current frame onwards
+        actions = []
+        max_action_len = min(self.chunk_size, episode_len - local_idx)
+        
+        for i in range(max_action_len):
+            action_idx = episode_start + local_idx + i
+            if action_idx < episode_start + episode_len:
+                actions.append(np.array(self.hf_dataset[action_idx]['action'], dtype=np.float32))
+        
+        # Pad actions to chunk_size
+        action_data = np.zeros((self.chunk_size, 4), dtype=np.float32)  # 4D actions
+        action_len = len(actions)
+        if action_len > 0:
+            action_data[:action_len] = np.array(actions)
+        
+        is_pad = np.zeros(self.chunk_size)
+        is_pad[action_len:] = 1
+        
+        # Prepare image data - since HF dataset only has one camera, replicate it for compatibility
+        # The model expects multiple camera views, so we'll use the same view
+        num_cams = len(self.camera_names) if len(self.camera_names) > 0 else 1
+        all_cam_images = np.stack([image for _ in range(num_cams)], axis=0)
+        
+        # Convert to torch tensors
+        image_data = torch.from_numpy(all_cam_images)
+        qpos_data = torch.from_numpy(qpos).float()
+        action_data = torch.from_numpy(action_data).float()
+        is_pad = torch.from_numpy(is_pad).bool()
+        
+        # Convert BGR to RGB if needed
+        image_data = torch.stack([torch.from_numpy(cv2.cvtColor(img.numpy(), cv2.COLOR_BGR2RGB)) for img in image_data], dim=0)
+        
+        # Channel first: [num_cams, C, H, W]
+        image_data = torch.einsum('k h w c -> k c h w', image_data)
+        
+        # Initialize transformations
+        if self.transformations is None:
+            print('Initializing transformations for HF dataset')
+            original_size = image_data.shape[2:]
+            ratio = 0.95
+            self.transformations = [
+                transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
+                transforms.Resize(original_size, antialias=True),
+                transforms.RandomRotation(degrees=[-5.0, 5.0], expand=False),
+                transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5)
+            ]
+        
+        # Apply augmentations
+        if self.augment_images:
+            for transform in self.transformations:
+                image_data = transform(image_data)
+        
+        # Normalize image to [0, 1]
+        image_data = image_data / 255.0
+        
+        # Normalize actions
+        if 'diffusion' in self.policy_class:
+            # normalize to [-1, 1]
+            action_data = ((action_data - self.norm_stats["action_min"]) / (self.norm_stats["action_max"] - self.norm_stats["action_min"])) * 2 - 1
+        else:
+            # normalize to mean 0 std 1
+            action_data = (action_data - self.norm_stats["action_mean"]) / self.norm_stats["action_std"]
+        
+        # Normalize qpos
+        qpos_data = (qpos_data - self.norm_stats["qpos_mean"]) / self.norm_stats["qpos_std"]
+        
+        if self.policy_class == 'ACT':
+            return image_data, qpos_data, action_data, is_pad
+        
+        sample_dict = {
+            'image': image_data,
+            'state': qpos_data,
+            'action': action_data,
+            'is_pad': is_pad,
+            'raw_lang': raw_lang
+        }
+        
+        return self.llava_pythia_process.forward_process(sample_dict)
+
+
+def get_norm_stats_hf(hf_dataset):
+    """
+    Computes normalization statistics for action and state data from a HuggingFace dataset.
+    
+    Args:
+        hf_dataset: HuggingFace dataset object
+        
+    Returns:
+        tuple: (stats dict, episode_lengths list)
+    """
+    all_qpos_data = []
+    all_action_data = []
+    episode_lengths = []
+    
+    current_episode = -1
+    episode_len = 0
+    
+    for idx in range(len(hf_dataset)):
+        sample = hf_dataset[idx]
+        ep_idx = sample['episode_index']
+        
+        if ep_idx != current_episode:
+            if current_episode != -1:
+                episode_lengths.append(episode_len)
+            current_episode = ep_idx
+            episode_len = 0
+        
+        episode_len += 1
+        
+        # observation.state: [x, y, z, gripper] - 4D
+        qpos = np.array(sample['observation.state'], dtype=np.float32)
+        # action: [x, y, z, gripper] - 4D
+        action = np.array(sample['action'], dtype=np.float32)
+        
+        all_qpos_data.append(torch.from_numpy(qpos))
+        all_action_data.append(torch.from_numpy(action))
+    
+    # Add the last episode length
+    episode_lengths.append(episode_len)
+    
+    all_qpos_data = torch.stack(all_qpos_data, dim=0)
+    all_action_data = torch.stack(all_action_data, dim=0)
+    
+    # Normalize action data
+    action_mean = all_action_data.mean(dim=[0]).float()
+    action_std = all_action_data.std(dim=[0]).float()
+    action_std = torch.clip(action_std, 1e-2, np.inf)
+    
+    # Normalize qpos data
+    qpos_mean = all_qpos_data.mean(dim=[0]).float()
+    qpos_std = all_qpos_data.std(dim=[0]).float()
+    qpos_std = torch.clip(qpos_std, 1e-2, np.inf)
+    
+    action_min = all_action_data.min(dim=0).values.float()
+    action_max = all_action_data.max(dim=0).values.float()
+    
+    eps = 0.0001
+    stats = {
+        "action_mean": action_mean.numpy(),
+        "action_std": action_std.numpy(),
+        "action_min": action_min.numpy() - eps,
+        "action_max": action_max.numpy() + eps,
+        "qpos_mean": qpos_mean.numpy(),
+        "qpos_std": qpos_std.numpy(),
+        "example_qpos": all_qpos_data[0].numpy()
+    }
+    
+    return stats, episode_lengths
+
+
+def load_hf_data(dataset_name, camera_names, batch_size_train, batch_size_val, chunk_size, config, 
+                 policy_class=None, train_ratio=0.95, llava_pythia_process=None):
+    """
+    Loads and prepares HuggingFace datasets for training and evaluation.
+    
+    Args:
+        dataset_name (str): Name of the HuggingFace dataset
+        camera_names (list of str): List of camera names
+        batch_size_train (int): Batch size for training
+        batch_size_val (int): Batch size for validation
+        chunk_size (int): Number of time steps to return in each sample
+        config (dict): Configuration dictionary
+        policy_class (str): Type of policy being used
+        train_ratio (float): Ratio of data to be used for training
+        llava_pythia_process: Process for further data processing
+        
+    Returns:
+        tuple: (train_dataset, val_dataset, norm_stats, sampler_params)
+    """
+    print(f"Loading HuggingFace dataset: {dataset_name}")
+    
+    # Load the dataset from HuggingFace
+    hf_dataset = load_dataset(dataset_name, split="train")
+    
+    print(f"Loaded {len(hf_dataset)} samples from HuggingFace")
+    
+    # Compute normalization statistics
+    norm_stats, episode_lengths = get_norm_stats_hf(hf_dataset)
+    
+    # Count episodes
+    num_episodes = len(episode_lengths)
+    print(f"Total episodes: {num_episodes}")
+    
+    # Create train/val split based on episodes
+    num_train_episodes = int(train_ratio * num_episodes)
+    
+    # Build episode start indices
+    episode_starts = []
+    cumsum = 0
+    for ep_len in episode_lengths:
+        episode_starts.append(cumsum)
+        cumsum += ep_len
+    
+    # Split into train and val indices
+    train_indices = []
+    val_indices = []
+    
+    for ep_idx in range(num_episodes):
+        start = episode_starts[ep_idx]
+        end = start + episode_lengths[ep_idx]
+        
+        if ep_idx < num_train_episodes:
+            train_indices.extend(range(start, end))
+        else:
+            val_indices.extend(range(start, end))
+    
+    # Create subset datasets
+    train_hf = hf_dataset.select(train_indices)
+    val_hf = hf_dataset.select(val_indices)
+    
+    print(f"Train samples: {len(train_hf)}, Val samples: {len(val_hf)}")
+    print(f"Train episodes: {num_train_episodes}, Val episodes: {num_episodes - num_train_episodes}")
+    
+    # Create dataset objects
+    train_dataset = HFEpisodicDataset(
+        train_hf, camera_names, norm_stats, chunk_size, policy_class,
+        llava_pythia_process=llava_pythia_process,
+        imsize=config['training_args'].pretrain_image_size
+    )
+    
+    val_dataset = HFEpisodicDataset(
+        val_hf, camera_names, norm_stats, chunk_size, policy_class,
+        llava_pythia_process=llava_pythia_process,
+        imsize=config['training_args'].pretrain_image_size
+    )
+    
+    # Prepare sampler params
+    train_episode_lengths = [episode_lengths[i] for i in range(num_train_episodes)]
+    val_episode_lengths = [episode_lengths[i] for i in range(num_train_episodes, num_episodes)]
+    
+    sampler_params = {
+        'train': {
+            "batch_size": batch_size_train,
+            'episode_len_l': [train_episode_lengths],
+            'sample_weights': None
+        },
+        'eval': {
+            "batch_size": batch_size_val,
+            'episode_len_l': [val_episode_lengths],
+            'sample_weights': None
+        }
+    }
+    
+    return train_dataset, val_dataset, norm_stats, sampler_params

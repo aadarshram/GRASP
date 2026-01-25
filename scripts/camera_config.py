@@ -54,7 +54,7 @@ METAWORLD_CAMERAS = {
 # SELECTED_CAMERAS = ['top', 'left', 'right']
 
 # Option 3: Only front camera (minimal)
-SELECTED_CAMERAS = ['front']
+# SELECTED_CAMERAS = ['front']
 
 # Option 4: Left and right only (multi-view without top)
 # SELECTED_CAMERAS = ['left', 'right']
@@ -62,11 +62,14 @@ SELECTED_CAMERAS = ['front']
 # Option 5: Include gripper view for manipulation tasks
 # SELECTED_CAMERAS = ['top', 'left', 'right', 'gripper']
 
+# Option 6: Right camera only (corner2) - for HuggingFace metaworld-pick-place-v3 dataset
+SELECTED_CAMERAS = ['right']  # 'right' corresponds to 'corner2' in MetaWorld
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
-def get_camera_names():
+def get_camera_names() -> list[str]:
     """
     Returns the list of selected camera names.
     
