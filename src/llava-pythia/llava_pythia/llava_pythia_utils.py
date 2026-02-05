@@ -197,16 +197,6 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
             torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
 
-    # TODO: https://huggingface.co/microsoft/phi-2/discussions/31. But in this code, setting gradient_checkpointing=True, it doesn't raise any error
-    if training_args.gradient_checkpointing:
-        if hasattr(model, "enable_input_require_grads"):
-            model.enable_input_require_grads()
-        else:
-            def make_inputs_require_grad(module, input, output):
-                output.requires_grad_(True)
-
-            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
     # if training_args.lora_enable and (not training_args.load_pretrain):
     if training_args.lora_enable:
         from peft import LoraConfig, get_peft_model
@@ -231,6 +221,23 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
     elif training_args.load_pretrain:
         rank0_print("Already loaded pretrained weights which is based on lora, skipping LoRA initialize...")
 
+    # Move gradient checkpointing setup AFTER LoRA wrapping to ensure hooks persist
+    if training_args.gradient_checkpointing:
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        else:
+            def make_inputs_require_grad(module, input, output):
+                output.requires_grad_(True)
+
+            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+        
+        # Explicitly enable gradients for input embeddings to fix DeepSpeed warning
+        # Access base model if wrapped
+        if hasattr(model, "get_input_embeddings"):
+             model.get_input_embeddings().weight.requires_grad_(True)
+        elif hasattr(model, "base_model") and hasattr(model.base_model, "get_input_embeddings"):
+             model.base_model.get_input_embeddings().weight.requires_grad_(True)
+
     model.config.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter
 
     if not model_args.tune_mm_mlp_adapter:
@@ -241,7 +248,8 @@ def load_llava_pythia(config=None, llava_pythia_config=None, rank0_print=print, 
             p.requires_grad = True
     # action head需要训练
     model.embed_out.requires_grad_(True)
-    model.proj_to_action.requires_grad_(True)
+    if hasattr(model, 'proj_to_action'):
+        model.proj_to_action.requires_grad_(True)
 
     if model_args.version in conversation_lib.conv_templates:
         conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]

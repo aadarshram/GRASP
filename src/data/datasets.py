@@ -9,10 +9,150 @@ import torchvision.transforms as transforms
 import IPython
 from src.data.processor import preprocess, preprocess_multimodal
 import copy
+try:
+    from datasets import load_dataset
+except ImportError:
+    print("datasets not installed.")
+
 e = IPython.embed
 
 def flatten_list(l):
     return [item for sublist in l for item in sublist]
+
+def get_hf_norm_stats(dataset_name):
+    dataset = load_dataset(dataset_name, split='train')
+    
+    actions = np.array(dataset['action'])
+    qpos = np.array(dataset['observation.state'])
+    
+    all_action_data = torch.from_numpy(actions).float()
+    all_qpos_data = torch.from_numpy(qpos).float()
+    
+    # normalize action data
+    action_mean = all_action_data.mean(dim=[0]).float()
+    action_std = all_action_data.std(dim=[0]).float()
+    action_std = torch.clip(action_std, 1e-2, np.inf)
+
+    # normalize qpos data
+    qpos_mean = all_qpos_data.mean(dim=[0]).float()
+    qpos_std = all_qpos_data.std(dim=[0]).float()
+    qpos_std = torch.clip(qpos_std, 1e-2, np.inf)
+
+    action_min = all_action_data.min(dim=0).values.float()
+    action_max = all_action_data.max(dim=0).values.float()
+
+    eps = 0.0001
+    stats = {"action_mean": action_mean.numpy(), "action_std": action_std.numpy(),
+             "action_min": action_min.numpy() - eps,"action_max": action_max.numpy() + eps,
+             "qpos_mean": qpos_mean.numpy(), "qpos_std": qpos_std.numpy(),
+             "example_qpos": qpos[0]}
+
+    ep_indices = np.array(dataset['episode_index'])
+    unique, counts = np.unique(ep_indices, return_counts=True)
+    all_episode_len = list(counts)
+    
+    return stats, all_episode_len
+
+class HFMetaworldDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset_name, chunk_size, norm_stats, policy_class, llava_pythia_process=None, imsize=480, split='train', episode_ids=None):
+        super().__init__()
+        self.dataset = load_dataset(dataset_name, split=split)
+        if episode_ids is not None:
+            self.dataset = self.dataset.filter(lambda x: x['episode_index'] in episode_ids)
+            
+        self.chunk_size = chunk_size
+        self.norm_stats = norm_stats
+        self.policy_class = policy_class
+        self.llava_pythia_process = llava_pythia_process
+        self.imsize = imsize
+        self.is_sim = True
+        
+        self.augment_images = False
+        if 'diffusion' in self.policy_class:
+            self.augment_images = True
+            
+        self.transformations = None
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+        
+        # Get image
+        image = sample['observation.image'] # PIL Image
+        if self.imsize != image.size[0]:
+             image = image.resize((self.imsize, self.imsize)) 
+        
+        image = np.array(image) # RGB
+        
+        # State
+        qpos = np.array(sample['observation.state'])
+        
+        # Action (chunked)
+        current_episode_index = sample['episode_index']
+        
+        next_indices = min(index + self.chunk_size, len(self.dataset))
+        
+        chunk = self.dataset[index : next_indices]
+        chunk_actions = chunk['action']
+        chunk_episode_indices = chunk['episode_index']
+        
+        valid_len = 0
+        for ep_idx in chunk_episode_indices:
+            if ep_idx == current_episode_index:
+                valid_len += 1
+            else:
+                break
+                
+        action = np.array(chunk_actions[:valid_len], dtype=np.float32)
+        
+        padded_action = np.zeros((self.chunk_size, action.shape[1]), dtype=np.float32)
+        padded_action[:valid_len] = action
+        is_pad = np.zeros(self.chunk_size)
+        is_pad[valid_len:] = 1
+        
+        image_data = torch.from_numpy(np.stack([image], axis=0)) # 1 H W C
+        image_data = image_data.permute(0, 3, 1, 2) # 1 C H W
+        
+        if self.transformations is None:
+             original_size = image_data.shape[2:]
+             ratio = 0.95
+             self.transformations = [
+                transforms.RandomCrop(size=[int(original_size[0] * ratio), int(original_size[1] * ratio)]),
+                transforms.Resize(original_size, antialias=True),
+                transforms.RandomRotation(degrees=[-5.0, 5.0], expand=False),
+                transforms.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5) 
+             ]
+        
+        if self.augment_images:
+            for transform in self.transformations:
+                image_data = transform(image_data)
+                
+        image_data = image_data / 255.0
+        
+        action_data = torch.from_numpy(padded_action).float()
+        qpos_data = torch.from_numpy(qpos).float()
+        is_pad = torch.from_numpy(is_pad).bool()
+        
+        if 'diffusion' in self.policy_class:
+             action_data = ((action_data - self.norm_stats["action_min"]) / (self.norm_stats["action_max"] - self.norm_stats["action_min"])) * 2 - 1
+        else:
+             action_data = (action_data - self.norm_stats["action_mean"]) / self.norm_stats["action_std"]
+             
+        qpos_data = (qpos_data - self.norm_stats["qpos_mean"]) / self.norm_stats["qpos_std"]
+        
+        if self.policy_class == 'ACT':
+            return image_data, qpos_data, action_data, is_pad
+            
+        sample = {
+            'image': image_data,
+            'state': qpos_data,
+            'action': action_data,
+            'is_pad': is_pad,
+            'raw_lang': "pick place" 
+        }
+        return self.llava_pythia_process.forward_process(sample)
 
 class EpisodicDataset(torch.utils.data.Dataset):
     """
@@ -279,10 +419,15 @@ class LlavaPythiaProcess:
 
         images_all = torch.chunk(image, image.shape[0], dim=0)
         data_dict['image'] = images_all[0]
-        data_dict['image_r'] = images_all[1]
+        if image.shape[0] > 1:
+            data_dict['image_r'] = images_all[1]
+        
         if image.shape[0] == 3:
-
             data_dict['image_top'] = images_all[2]
+        elif image.shape[0] == 1:
+            # If only one image is available, we might want to duplicate it or handle it downstream
+            # For now, let's just use the same image for image_r if needed, or handle missing key
+            pass
         data_dict['state'] = sample['state']
         data_dict['action'] = sample['action']
         data_dict['is_pad'] = sample['is_pad']
@@ -417,6 +562,36 @@ def load_data(dataset_dir_l, name_filter, camera_names, batch_size_train, batch_
     """
     if type(dataset_dir_l) == str:
         dataset_dir_l = [dataset_dir_l]
+    
+    is_hf = False
+    if not os.path.exists(dataset_dir_l[0]) and ('/' in dataset_dir_l[0] or 'metaworld' in dataset_dir_l[0]):
+        is_hf = True
+
+    if is_hf:
+        dataset_name = dataset_dir_l[0]
+        print(f"Loading HF dataset: {dataset_name}")
+        norm_stats, all_episode_len = get_hf_norm_stats(dataset_name)
+        
+        num_episodes = len(all_episode_len)
+        indices = np.random.permutation(num_episodes)
+        num_train = int(train_ratio * num_episodes)
+        
+        train_ep_ids = indices[:num_train]
+        val_ep_ids = indices[num_train:]
+        
+        print(f'Train on {len(train_ep_ids)} episodes, Val on {len(val_ep_ids)} episodes')
+        
+        train_dataset = HFMetaworldDataset(dataset_name, chunk_size, norm_stats, policy_class, llava_pythia_process, imsize=config['training_args'].pretrain_image_size, episode_ids=train_ep_ids)
+        val_dataset = HFMetaworldDataset(dataset_name, chunk_size, norm_stats, policy_class, llava_pythia_process, imsize=config['training_args'].pretrain_image_size, episode_ids=val_ep_ids)
+        
+        sampler_params = {
+            'train': {"batch_size": batch_size_train, 'episode_len_l': [all_episode_len[i] for i in train_ep_ids], 'sample_weights':sample_weights},
+            'eval': {"batch_size": batch_size_val, 'episode_len_l': [all_episode_len[i] for i in val_ep_ids], 'sample_weights': None}
+        }
+        
+        if return_dataset:
+            return train_dataset, val_dataset, norm_stats, sampler_params
+
     dataset_path_list_list = [find_all_hdf5(dataset_dir, skip_mirrored_data) for dataset_dir in dataset_dir_l]
     num_episodes_0 = len(dataset_path_list_list[0])
     dataset_path_list = flatten_list(dataset_path_list_list)

@@ -3,6 +3,7 @@ import numpy as np
 import h5py
 import argparse
 import os
+os.environ['MUJOCO_GL'] = 'egl'
 from pathlib import Path
 import metaworld
 import metaworld.policies
